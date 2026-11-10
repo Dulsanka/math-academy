@@ -1,6 +1,8 @@
     (function () {
       const WORKBOOK_FILES = {
         wb_arith: '1_interactive_math_workbook.html',
+        wb_y6: '6_year6_nz_mathematics_workbook.html',
+        wb_y7: '7_year7_nz_mathematics_workbook.html',
         wb_y8: '2_year8_nz_mathematics_workbook.html',
         wb_y9: '3_year9_nz_mathematics_workbook.html',
         wb_y10: '4_year10_nz_mathematics_workbook.html',
@@ -217,7 +219,7 @@
         try {
           if (!('speechSynthesis' in window)) return;
           window.speechSynthesis.cancel();
-          let textToRead = 'Welcome to the New Zealand Mathematics Master Academy. Select any of the 5 workbooks to begin.';
+          let textToRead = 'Welcome to the New Zealand Mathematics Master Academy. Select any of the 7 workbooks to begin.';
           if (currentWorkbookKey !== 'home' && workbookIframe.contentDocument) {
             const doc = workbookIframe.contentDocument;
             const el = doc.querySelector('h3, .step-text, .problem-badge');

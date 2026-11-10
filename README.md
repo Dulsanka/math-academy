@@ -1,13 +1,15 @@
-# NZ Interactive Mathematics Workbooks
+﻿# NZ Interactive Mathematics Workbooks
 
-A static, browser-based mathematics practice suite for New Zealand learners in Years 8–11, plus a foundational arithmetic workbook. It combines guided questions, visual examples, tutor customization, and printable answer sheets.
+A static, browser-based mathematics practice suite for New Zealand learners in Years 6–11, plus a foundational arithmetic workbook. It combines guided questions, visual examples, tutor customization, and printable answer sheets.
 
 ## Workbooks
 
 | File | Description |
 | --- | --- |
-| `index.html` | Landing page and navigation hub for all five workbooks |
+| `index.html` | Landing page and navigation hub for all seven workbooks |
 | `1_interactive_math_workbook.html` | Configurable arithmetic and long-division practice |
+| `6_year6_nz_mathematics_workbook.html` | Year 6 curriculum workbook |
+| `7_year7_nz_mathematics_workbook.html` | Year 7 curriculum workbook |
 | `2_year8_nz_mathematics_workbook.html` | Year 8 curriculum workbook |
 | `3_year9_nz_mathematics_workbook.html` | Year 9 curriculum workbook |
 | `4_year10_nz_mathematics_workbook.html` | Year 10 curriculum workbook |
@@ -35,6 +37,8 @@ index.html
 3_year9_nz_mathematics_workbook.html
 4_year10_nz_mathematics_workbook.html
 5_year11_nz_mathematics_workbook.html
+6_year6_nz_mathematics_workbook.html
+7_year7_nz_mathematics_workbook.html
 assets/
   favicon.svg
   css/
@@ -44,6 +48,8 @@ assets/
   js/
     site.js
     interactive-workbook.js
+    year6-workbook.js
+    year7-workbook.js
     year8-workbook.js
     year9-workbook.js
     year10-workbook.js
@@ -58,7 +64,7 @@ Open `index.html` in a modern browser. Keep the `assets/` folder alongside the H
 
 ## Publish with GitHub Pages
 
-Publish the repository with GitHub Pages using the repository’s Pages settings. The landing page loads the workbook HTML files and assets from the same published site.
+Publish the repository with GitHub Pages using the repository's Pages settings. The landing page loads the workbook HTML files and assets from the same published site.
 
 ## Technology
 

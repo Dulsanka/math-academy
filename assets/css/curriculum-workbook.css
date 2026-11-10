@@ -957,6 +957,17 @@
     }
 
 
+    body[data-theme="year6"] {
+      --primary: #0ea5e9;
+      --primary-dark: #0284c7;
+      --brand-gradient: linear-gradient(135deg, #0ea5e9, #38bdf8);
+    }
+
+    body[data-theme="year7"] {
+      --primary: #14b8a6;
+      --primary-dark: #0f766e;
+      --brand-gradient: linear-gradient(135deg, #14b8a6, #0ea5e9);
+    }
     body[data-theme="year9"] {
       --brand-gradient: linear-gradient(135deg, #0284c7, #2563eb);
     }

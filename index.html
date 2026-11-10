@@ -4,38 +4,44 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
-  <title>NZ Mathematics Academy — 5-in-1 Interactive Workbook Suite</title>
+  <title>NZ Mathematics Academy — 7-in-1 Interactive Workbook Suite</title>
   <link rel="stylesheet" href="assets/css/site.css" />
 </head>
 <body>
   <!-- PERSISTENT TOP MASTER NAVIGATION DOCK -->
   <header class="master-dock">
-    <div id="dock-home-brand" class="dock-brand" title="Return to Master 5-Workbook Landing Page">
+    <div id="dock-home-brand" class="dock-brand" title="Return to Mathematics Academy Landing Page">
       <div class="dock-logo">NZ∑</div>
       <div class="dock-brand-text">
         <h1>NZ Mathematics Master Academy</h1>
-        <p>All-in-One Offline Suite (5 Complete Workbooks)</p>
+        <p>All-in-One Offline Suite (7 Complete Workbooks)</p>
       </div>
     </div>
 
     <nav class="dock-switcher" aria-label="Workbook Selector">
       <button type="button" class="dock-wb-btn active" data-select-wb="home">
-        🏠 All 5 Workbooks
+        🏠 All 7 Workbooks
       </button>
       <button type="button" class="dock-wb-btn" data-select-wb="wb_arith">
         ➗ 1. Arithmetic &amp; Division
       </button>
+      <button type="button" class="dock-wb-btn" data-select-wb="wb_y6">
+        📘 2. Year 6 NZ
+      </button>
+      <button type="button" class="dock-wb-btn" data-select-wb="wb_y7">
+        📗 3. Year 7 NZ
+      </button>
       <button type="button" class="dock-wb-btn" data-select-wb="wb_y8">
-        📘 2. Year 8 NZ
+        📘 4. Year 8 NZ
       </button>
       <button type="button" class="dock-wb-btn" data-select-wb="wb_y9">
-        📗 3. Year 9 NZ
+        📗 5. Year 9 NZ
       </button>
       <button type="button" class="dock-wb-btn" data-select-wb="wb_y10">
-        📙 4. Year 10 NZ
+        📙 6. Year 10 NZ
       </button>
       <button type="button" class="dock-wb-btn" data-select-wb="wb_y11">
-        🎓 5. Year 11 NZ
+        🎓 7. Year 11 NZ
       </button>
     </nav>
 
@@ -52,28 +58,28 @@
     </div>
   </header>
 
-  <!-- MASTER LANDING PAGE (SHOWS ALL 5 WORKBOOK OPTIONS) -->
+  <!-- MASTER LANDING PAGE (SHOWS ALL 7 WORKBOOK OPTIONS) -->
   <main id="landing-portal-view" class="landing-container">
     <section class="hero-banner">
       <div class="hero-left">
         <span class="hero-pill">✨ NEW ZEALAND CURRICULUM (TE MĀTAIAHO) &amp; FOUNDATIONS SUITE</span>
         <h2>Choose Your Mathematics Workbook</h2>
         <p>
-          Welcome to the complete offline Mathematics Academy! Select any of the <strong>5 Interactive Workbooks</strong> below to practice step-by-step guided problems, test yourself with unassisted 25-question exams, take notes or draw on the digital scratchpad, and generate multi-page PDF answer keys.
+          Welcome to the complete offline Mathematics Academy! Select any of the <strong>7 Interactive Workbooks</strong> below to practice step-by-step guided problems, test yourself with unassisted 25-question exams, take notes or draw on the digital scratchpad, and generate multi-page PDF answer keys.
         </p>
       </div>
 
       <div class="hero-right-cards">
         <div class="hero-stat-box">
-          <div class="hero-stat-num">5</div>
+          <div class="hero-stat-num">7</div>
           <div class="hero-stat-label">Complete Workbooks</div>
         </div>
         <div class="hero-stat-box">
-          <div class="hero-stat-num">68</div>
+          <div class="hero-stat-num">100</div>
           <div class="hero-stat-label">Topic Modules</div>
         </div>
         <div class="hero-stat-box">
-          <div class="hero-stat-num">800+</div>
+          <div class="hero-stat-num">1100+</div>
           <div class="hero-stat-label">Dynamic Questions</div>
         </div>
       </div>
@@ -86,8 +92,8 @@
       </span>
     </div>
 
-    <!-- 5 WORKBOOK OPTIONS GRID -->
-    <section class="workbooks-grid" aria-label="5 Mathematics Workbooks">
+    <!-- 7 WORKBOOK OPTIONS GRID -->
+    <section class="workbooks-grid" aria-label="7 Mathematics Workbooks">
       <!-- Option 1: Interactive Math Workbook -->
       <article class="wb-portal-card" data-launch-wb="wb_arith">
         <div>
@@ -112,14 +118,30 @@
         </button>
       </article>
 
-      <!-- Option 2: Year 8 NZ Mathematics Workbook -->
+      <!-- Option 2: Year 6 NZ Mathematics Workbook -->
+      <article class="wb-portal-card" data-launch-wb="wb_y6">
+        <div><div class="wb-card-top"><div class="wb-icon-badge" style="background:linear-gradient(135deg, #0ea5e9, #38bdf8);">NZ 6</div><span class="wb-level-pill">Phase 2 • Year 6 Curriculum</span></div>
+          <h4>2. Year 6 - NZ Mathematics Workbook</h4>
+          <p>Build fluency across number, algebra, measurement, geometry, statistics and probability, with fractions, decimals, percentages, metric measures, data and chance.</p>
+          <div class="wb-chip-list"><span class="wb-topic-chip">6 Strand Pages</span><span class="wb-topic-chip">16 Sub-Strand Modules</span><span class="wb-topic-chip">25-Q Pure Exam</span><span class="wb-topic-chip">PDF Answer Key</span></div>
+        </div><button type="button" class="wb-launch-btn" style="background:#0ea5e9;" data-launch-wb="wb_y6">Open Year 6 NZ Workbook →</button>
+      </article>
+      <!-- Option 3: Year 7 NZ Mathematics Workbook -->
+      <article class="wb-portal-card" data-launch-wb="wb_y7">
+        <div><div class="wb-card-top"><div class="wb-icon-badge" style="background:linear-gradient(135deg, #14b8a6, #0ea5e9);">NZ 7</div><span class="wb-level-pill">Phase 3 • Year 7 Curriculum</span></div>
+          <h4>3. Year 7 - NZ Mathematics Workbook</h4>
+          <p>Practise number properties, ratios, equations, linear patterns, measurement, geometric reasoning, statistical investigations and probability.</p>
+          <div class="wb-chip-list"><span class="wb-topic-chip">6 Strand Pages</span><span class="wb-topic-chip">16 Sub-Strand Modules</span><span class="wb-topic-chip">25-Q Pure Exam</span><span class="wb-topic-chip">PDF Answer Key</span></div>
+        </div><button type="button" class="wb-launch-btn" style="background:#14b8a6;" data-launch-wb="wb_y7">Open Year 7 NZ Workbook →</button>
+      </article>
+      <!-- Option 4: Year 8 NZ Mathematics Workbook -->
       <article class="wb-portal-card" data-launch-wb="wb_y8">
         <div>
           <div class="wb-card-top">
             <div class="wb-icon-badge" style="background:linear-gradient(135deg, #0284c7, #4f46e5);">NZ 8</div>
             <span class="wb-level-pill">Phase 3 • Year 8 Curriculum</span>
           </div>
-          <h4>2. Year 8 - NZ Mathematics Workbook</h4>
+          <h4>4. Year 8 - NZ Mathematics Workbook</h4>
           <p>
             Covers all 6 strands of Year 8 NZ Mathematics: Primes, Squares/Cubes, Negative Integers, Fractions/Decimals/Percentages, Ratios &amp; GST, Linear Equations, Trapeziums/Prisms, Polygon Angles, PPDAC Statistics, and Probability Trees.
           </p>
@@ -135,14 +157,14 @@
         </button>
       </article>
 
-      <!-- Option 3: Year 9 NZ Mathematics Workbook -->
+      <!-- Option 5: Year 9 NZ Mathematics Workbook -->
       <article class="wb-portal-card" data-launch-wb="wb_y9">
         <div>
           <div class="wb-card-top">
             <div class="wb-icon-badge" style="background:linear-gradient(135deg, #059669, #0284c7);">NZ 9</div>
             <span class="wb-level-pill">Phase 4 • Year 9 Curriculum</span>
           </div>
-          <h4>3. Year 9 - NZ Mathematics Workbook</h4>
+          <h4>5. Year 9 - NZ Mathematics Workbook</h4>
           <p>
             Advances into Index Laws, Standard Form (Scientific Notation), Simple Interest, Expanding Brackets, Equations with Variables on Both Sides, Linear Graphs (y = mx + c), Cylinders, Regular Polygons, Pythagoras Intro, and Box Plots (IQR).
           </p>
@@ -158,14 +180,14 @@
         </button>
       </article>
 
-      <!-- Option 4: Year 10 NZ Mathematics Workbook -->
+      <!-- Option 6: Year 10 NZ Mathematics Workbook -->
       <article class="wb-portal-card" data-launch-wb="wb_y10">
         <div>
           <div class="wb-card-top">
             <div class="wb-icon-badge" style="background:linear-gradient(135deg, #4f46e5, #7c3aed);">NZ 10</div>
             <span class="wb-level-pill">Phase 4 • Year 10 Curriculum</span>
           </div>
-          <h4>4. Year 10 - NZ Mathematics Workbook</h4>
+          <h4>6. Year 10 - NZ Mathematics Workbook</h4>
           <p>
             Covers Reverse Percentages (Pre-GST), Inverse Proportion, Expanding &amp; Factorising Quadratics (x+a)(x+b), Parabolas, Density, Cones/Spheres, Kinematics Graphs, Right-Angled Trigonometry (SOHCAHTOA), Similar Triangles, and Venn Diagrams.
           </p>
@@ -181,14 +203,14 @@
         </button>
       </article>
 
-      <!-- Option 5: Year 11 NZ Mathematics Workbook -->
+      <!-- Option 7: Year 11 NZ Mathematics Workbook -->
       <article class="wb-portal-card" data-launch-wb="wb_y11">
         <div>
           <div class="wb-card-top">
             <div class="wb-icon-badge" style="background:linear-gradient(135deg, #0f766e, #0284c7);">NZ 11</div>
             <span class="wb-level-pill">Phase 5 • NCEA Level 1</span>
           </div>
-          <h4>5. Year 11 - NZ Mathematics Workbook</h4>
+          <h4>7. Year 11 - NZ Mathematics Workbook</h4>
           <p>
             Full NCEA Level 1 preparation: Fractional Exponents, Extracting GST (× 3/23), Rational Algebraic Fractions, Simultaneous Equations, Parabola Vertex Form, Back-Solving 3D Solids, 3D Pythagoras, Circle Theorems, Informal Confidence Intervals, and Relative Risk.
           </p>
