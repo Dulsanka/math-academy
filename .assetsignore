@@ -1,0 +1,15 @@
+/.git
+/.github
+/.agents
+/.codex
+/.wrangler
+/data
+/node_modules
+/src
+/migrations
+/server.js
+/render.yaml
+/README.md
+/.gitignore
+/.assetsignore
+/wrangler.toml

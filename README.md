@@ -1,14 +1,16 @@
-# NZ Interactive Mathematics Workbooks
+﻿# NZ Interactive Mathematics Workbooks
 
-A browser-based mathematics practice suite for New Zealand learners in Years 6–11, plus a foundational arithmetic workbook. The Node.js access server provides sign-in, per-user workbook entitlements, and an administrator screen for managing accounts.
+A browser-based mathematics practice suite for New Zealand learners in Years 6–11, plus a foundational arithmetic workbook. The access service provides sign-in, per-user workbook entitlements, and administrator tools for managing accounts.
 
-## Workbooks
+## Workbooks and access files
 
 | File | Description |
 | --- | --- |
 | `index.html` | Sign-in page and navigation hub for entitled workbooks |
 | `admin.html` | Administrator-only user and entitlement management |
-| `server.js` | Authentication, session, entitlement checks, and protected page delivery |
+| `src/worker.js` | Cloudflare Worker API and protected page delivery |
+| `migrations/0001_init.sql` | D1 tables for accounts, sessions, and login throttling |
+| `server.js` | Optional local Node.js server |
 | `1_interactive_math_workbook.html` | Configurable arithmetic and long-division practice |
 | `6_year6_nz_mathematics_workbook.html` | Year 6 curriculum workbook |
 | `7_year7_nz_mathematics_workbook.html` | Year 7 curriculum workbook |
@@ -17,56 +19,11 @@ A browser-based mathematics practice suite for New Zealand learners in Years 6�
 | `4_year10_nz_mathematics_workbook.html` | Year 10 curriculum workbook |
 | `5_year11_nz_mathematics_workbook.html` | Year 11 curriculum workbook |
 
-## Features
+The workbooks include guided questions with immediate feedback, curriculum topics by strand, random practice, progress indicators, stars, streaks, timers, tutor mode, notes, a drawing pad, printable answer sheets, topic guides, a calculator, and browser-local progress recovery. Progress is saved in each learner's browser and does not sync between devices.
 
-- Guided, multi-step questions with immediate answer feedback
-- Curriculum topics organized by strand and sub-strand
-- Random practice sets, progress indicators, stars, streaks, and timers
-- Tutor mode for customizing questions
-- Text notes and a drawing scratchpad
-- Printable and downloadable answer sheets
-- Prepared math topic guides and a built-in calculator with formula reference
-- Browser-local progress saving and recovery
+## Local use
 
-Workbook progress is saved in each user's browser and does not sync between devices. User accounts and entitlements are stored by the access server in `DATA_DIR/users.json`; keep that directory on persistent storage and out of source control.
-
-## Project Structure
-
-```text
-index.html
-admin.html
-admin.js
-admin.css
-server.js
-1_interactive_math_workbook.html
-2_year8_nz_mathematics_workbook.html
-3_year9_nz_mathematics_workbook.html
-4_year10_nz_mathematics_workbook.html
-5_year11_nz_mathematics_workbook.html
-6_year6_nz_mathematics_workbook.html
-7_year7_nz_mathematics_workbook.html
-assets/
-  favicon.svg
-  css/
-    site.css
-    interactive-workbook.css
-    curriculum-workbook.css
-  js/
-    site.js
-    interactive-workbook.js
-    year6-workbook.js
-    year7-workbook.js
-    year8-workbook.js
-    year9-workbook.js
-    year10-workbook.js
-    year11-workbook.js
-```
-
-The year-level workbooks share a stylesheet and keep their question logic in separate JavaScript files. Workbook HTML pages and their year-specific JavaScript files are served only after the server checks the signed-in user's entitlement. Shared styles and the sign-in page are public assets.
-
-## Run Locally
-
-Install Node.js 20 or later, then from the project directory set an initial administrator username and password (at least 12 characters) and a writable data directory. For example, in PowerShell:
+For the existing Node.js local server, install Node.js 20 or later and run these commands in PowerShell from the project directory:
 
 ```powershell
 $env:BOOTSTRAP_ADMIN_USERNAME = 'academy-admin'
@@ -75,33 +32,63 @@ $env:DATA_DIR = "$PWD/data"
 node server.js
 ```
 
-Open `http://localhost:3000`. The first start creates the administrator account if no admin exists yet. Use **Manage Users** to create student accounts, grant workbook access, disable accounts, and reset passwords. The server keeps sessions in memory, so a server restart signs users out. The user database survives restarts when `DATA_DIR` points to persistent storage.
+Open `http://localhost:3000`. The local server stores users in `data/users.json`; that file is ignored by Git and does not transfer to the online service. Local accounts use a different password hash from the Cloudflare version, so create the hosted administrator and learner accounts again after deployment.
 
-## Deployment
+## Free Cloudflare deployment
 
-The included `render.yaml` configures a Render Node web service, persistent user-data disk, health check, and automatic deploys from the `main` branch. To create it, push the project to GitHub, sign in to Render, choose **New > Blueprint**, connect the repository, and provide `BOOTSTRAP_ADMIN_USERNAME` plus a unique `BOOTSTRAP_ADMIN_PASSWORD` when prompted. Render then builds and starts the service. Future commits pushed to `main` trigger a new deploy.
+This project is configured for a Cloudflare Worker with static assets and a D1 database. The Worker checks entitlements before returning workbook HTML or question JavaScript. The database stores password hashes, active status, entitlements, sessions, and login throttling. GitHub Pages cannot run these checks, so use the `workers.dev` URL Cloudflare gives the Worker. Cloudflare's free plans have daily request and database usage limits; if a limit is reached, access may pause until the quota resets.
 
-The configured persistent disk requires a paid Render web-service plan. Do not remove or replace the disk after users are created unless you have backed up `DATA_DIR/users.json`. After the initial administrator is created, remove `BOOTSTRAP_ADMIN_PASSWORD` from the Render service environment. Use the deployed HTTPS URL; the production session cookie requires HTTPS.
+### One-time setup
 
-The local `data/users.json` is intentionally not pushed to GitHub. The first hosted admin account is created from the Render bootstrap values; recreate student accounts and entitlements in the hosted **Manage Users** screen.
+1. Create a Cloudflare account on its Free plan and enable Workers for the account.
+2. Install the Wrangler command-line tool from PowerShell:
 
-GitHub Pages alone cannot run the access server. Disable any GitHub Pages publication for this repository so it does not expose workbook files outside the entitlement checks. If workbook source content itself must remain confidential, make the GitHub repository private as well. The server protects workbook page and question-script requests served through the Node service, including direct URL requests.
+   ```powershell
+   npm install --global wrangler
+   wrangler login
+   ```
+
+3. In the project folder, create the D1 database:
+
+   ```powershell
+   wrangler d1 create math-academy-users --update-config --binding DB
+   ```
+
+   Wrangler creates the database and updates the `database_id` value in `wrangler.toml`.
+
+4. Create the database tables:
+
+   ```powershell
+   wrangler d1 migrations apply math-academy-users --remote
+   ```
+
+5. Add the initial administrator credentials as Worker secrets. Run each command and enter the requested value when Wrangler prompts. Use a unique password of at least 12 characters:
+
+   ```powershell
+   wrangler secret put BOOTSTRAP_ADMIN_USERNAME
+   wrangler secret put BOOTSTRAP_ADMIN_PASSWORD
+   ```
+
+6. Deploy the site and Worker:
+
+   ```powershell
+   wrangler deploy
+   ```
+
+   Open the `workers.dev` URL shown by Wrangler and sign in using the bootstrap administrator username and password. The first successful API request creates the administrator in D1. Remove the two bootstrap secrets afterward in **Cloudflare Dashboard → Workers & Pages → math-academy → Settings → Variables and Secrets**. The account remains in D1 after removing them.
+
+### Deploy automatically after GitHub pushes
+
+The included `.github/workflows/deploy.yml` applies D1 migrations and deploys the Worker when changes are pushed to `main`. Set these two GitHub repository secrets first:
+
+1. In Cloudflare, create an API token scoped to the account hosting this Worker, with **Workers Scripts: Edit** and **D1: Edit** permissions. Copy the account ID from the Cloudflare dashboard.
+2. In GitHub, open the repository **Settings → Secrets and variables → Actions → New repository secret**. Add `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` with the values from Cloudflare.
+3. Commit and push changes to `main`. Check the repository's **Actions** tab for the deployment result. Future pushes update the Worker automatically.
+
+Never add Cloudflare tokens or passwords to a source file or commit them to GitHub. The GitHub Pages address `https://dulsanka.github.io/math-academy/` is a static copy and cannot provide this access control. Disable GitHub Pages publication. Because this repository is currently public, workbook source files are also visible on GitHub; make the repository private if the workbook content itself should be restricted.
 
 ## Technology
 
-- HTML5
-- CSS3
-- Vanilla JavaScript
-- SVG favicon
-
-## Contributing
-
-Suggestions, curriculum feedback, and improvements are welcome. Please open an issue or pull request in the project repository.
-
-## License
-
-No license file is included yet. The project owner should choose and add a license before inviting reuse or redistribution.
-
-## Author
-
-Created by Dulsanka Kulasinghe.
+- HTML, CSS, and browser JavaScript for workbook pages
+- Node.js for optional local access server
+- Cloudflare Workers and D1 for online access management
