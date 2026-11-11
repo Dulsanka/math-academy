@@ -6,8 +6,8 @@ const SESSION_COOKIE = '__Host-math_academy_session';
 
 const WORKBOOKS = {
   arithmetic: { page: '/1_interactive_math_workbook.html', script: '/assets/js/interactive-workbook.js' },
-  year6: { page: '/6_year6_nz_mathematics_workbook.html', script: '/assets/js/year6-workbook.js' },
-  year7: { page: '/7_year7_nz_mathematics_workbook.html', script: '/assets/js/year7-workbook.js' },
+  year6: { page: '/6_year6_nz_mathematics_workbook.html', script: '/assets/js/year6-curriculum.js', engine: '/assets/js/curriculum-workbook.js' },
+  year7: { page: '/7_year7_nz_mathematics_workbook.html', script: '/assets/js/year7-curriculum.js', engine: '/assets/js/curriculum-workbook.js' },
   year8: { page: '/2_year8_nz_mathematics_workbook.html', script: '/assets/js/year8-workbook.js' },
   year9: { page: '/3_year9_nz_mathematics_workbook.html', script: '/assets/js/year9-workbook.js' },
   year10: { page: '/4_year10_nz_mathematics_workbook.html', script: '/assets/js/year10-workbook.js' },
@@ -326,12 +326,11 @@ async function handleApi(request, env, url) {
   return json({ error: 'Admin endpoint not found.' }, 404);
 }
 
-function workbookForPath(pathname) {
-  for (const [key, workbook] of Object.entries(WORKBOOKS)) {
+function workbooksForPath(pathname) {
+  return Object.entries(WORKBOOKS).filter(([, workbook]) => {
     const pageAlias = workbook.page.slice(0, -'.html'.length);
-    if (pathname === workbook.page || pathname === pageAlias || pathname === workbook.script) return key;
-  }
-  return null;
+    return pathname === workbook.page || pathname === pageAlias || pathname === workbook.script || pathname === workbook.engine;
+  });
 }
 
 async function serveAsset(request, env, cacheControl, assetPath) {
@@ -367,13 +366,12 @@ async function handleRequest(request, env) {
     return serveAsset(request, env, 'private, no-store');
   }
 
-  const workbookKey = workbookForPath(path);
-  if (workbookKey) {
-    const allowed = auth && (auth.user.role === 'admin' || auth.user.entitlements.includes(workbookKey));
+  const matchingWorkbooks = workbooksForPath(path);
+  if (matchingWorkbooks.length) {
+    const allowed = auth && (auth.user.role === 'admin' || matchingWorkbooks.some(([key]) => auth.user.entitlements.includes(key)));
     if (!allowed) return secure(text(auth ? 'This account does not have access to this workbook.' : 'Sign in is required.', auth ? 403 : 401));
-    const workbook = WORKBOOKS[workbookKey];
-    const pageAlias = workbook.page.slice(0, -'.html'.length);
-    const assetPath = path === pageAlias ? workbook.page : undefined;
+    const pageMatch = matchingWorkbooks.find(([, workbook]) => path === workbook.page || path === workbook.page.slice(0, -'.html'.length));
+    const assetPath = pageMatch && path !== pageMatch[1].page ? pageMatch[1].page : undefined;
     return serveAsset(request, env, 'private, no-store', assetPath);
   }
 

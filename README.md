@@ -16,6 +16,8 @@ A browser-based mathematics practice suite for New Zealand learners in Years 6â€
 | `1_interactive_math_workbook.html` | Configurable arithmetic and long-division practice |
 | `6_year6_nz_mathematics_workbook.html` | Year 6 curriculum workbook |
 | `7_year7_nz_mathematics_workbook.html` | Year 7 curriculum workbook |
+| `assets/js/curriculum-workbook.js` | Shared Year 6 and Year 7 workbook engine |
+| `assets/js/year6-curriculum.js`, `assets/js/year7-curriculum.js` | Entitlement-protected curriculum data for each year |
 | `2_year8_nz_mathematics_workbook.html` | Year 8 curriculum workbook |
 | `3_year9_nz_mathematics_workbook.html` | Year 9 curriculum workbook |
 | `4_year10_nz_mathematics_workbook.html` | Year 10 curriculum workbook |

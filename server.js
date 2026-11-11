@@ -16,8 +16,8 @@ const PASSWORD_BYTES = 64;
 const SESSION_COOKIE = process.env.NODE_ENV === 'production' ? '__Host-math_academy_session' : 'math_academy_session';
 const WORKBOOKS = {
   arithmetic: { page: '1_interactive_math_workbook.html', script: 'assets/js/interactive-workbook.js' },
-  year6: { page: '6_year6_nz_mathematics_workbook.html', script: 'assets/js/year6-workbook.js' },
-  year7: { page: '7_year7_nz_mathematics_workbook.html', script: 'assets/js/year7-workbook.js' },
+  year6: { page: '6_year6_nz_mathematics_workbook.html', script: 'assets/js/year6-curriculum.js', engine: 'assets/js/curriculum-workbook.js' },
+  year7: { page: '7_year7_nz_mathematics_workbook.html', script: 'assets/js/year7-curriculum.js', engine: 'assets/js/curriculum-workbook.js' },
   year8: { page: '2_year8_nz_mathematics_workbook.html', script: 'assets/js/year8-workbook.js' },
   year9: { page: '3_year9_nz_mathematics_workbook.html', script: 'assets/js/year9-workbook.js' },
   year10: { page: '4_year10_nz_mathematics_workbook.html', script: 'assets/js/year10-workbook.js' },
@@ -154,11 +154,12 @@ async function serveFile(res, relativePath, cacheControl = 'no-cache') {
   fs.createReadStream(absolutePath).pipe(res);
 }
 
-function workbookForPath(urlPath) {
-  for (const [key, workbook] of Object.entries(WORKBOOKS)) {
-    if (urlPath === `/${workbook.page}` || urlPath === `/${workbook.script}`) return key;
-  }
-  return null;
+function workbooksForPath(urlPath) {
+  return Object.entries(WORKBOOKS).filter(([, workbook]) => {
+    const pagePath = `/${workbook.page}`;
+    const pageAlias = pagePath.slice(0, -'.html'.length);
+    return urlPath === pagePath || urlPath === pageAlias || urlPath === `/${workbook.script}` || urlPath === `/${workbook.engine}`;
+  });
 }
 
 function resolveStaticPath(urlPath) {
@@ -323,12 +324,13 @@ async function main() {
       return serveFile(res, file, 'no-store');
     }
 
-    const workbookKey = workbookForPath(urlPath);
-    if (workbookKey) {
-      const allowed = auth && (auth.user.role === 'admin' || auth.user.entitlements.includes(workbookKey));
+    const matchingWorkbooks = workbooksForPath(urlPath);
+    if (matchingWorkbooks.length) {
+      const allowed = auth && (auth.user.role === 'admin' || matchingWorkbooks.some(([key]) => auth.user.entitlements.includes(key)));
       if (!allowed) { res.writeHead(auth ? 403 : 401, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(auth ? 'This account does not have access to this workbook.' : 'Sign in is required.'); return; }
-      const workbook = WORKBOOKS[workbookKey];
-      const file = urlPath.endsWith('.html') ? workbook.page : workbook.script;
+      const pageMatch = matchingWorkbooks.find(([, workbook]) => urlPath === `/${workbook.page}` || urlPath === `/${workbook.page.slice(0, -'.html'.length)}`);
+      const scriptMatch = matchingWorkbooks.find(([, workbook]) => urlPath === `/${workbook.script}`);
+      const file = pageMatch ? pageMatch[1].page : scriptMatch ? scriptMatch[1].script : matchingWorkbooks[0][1].engine;
       return serveFile(res, file, 'private, no-store');
     }
 

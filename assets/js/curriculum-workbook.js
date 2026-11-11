@@ -1,4 +1,5 @@
     (function () {
+      const CURRENT_YEAR = Number((document.body.dataset.theme || 'year6').replace(/\D/g, '')) || 6;
       // =========================================================================
       // SOUND ENGINE (Web Audio API)
       // =========================================================================
@@ -51,30 +52,12 @@
         return Math.floor(Math.random() * (max - min + 1)) + min;
       }
 
-      // =========================================================================
-      // COMPLETE YEAR 7 NZ CURRICULUM CATALOG (6 STRANDS, 16 SUB-STRAND MODULES)
-      // =========================================================================
-      const CURRICULUM_MODULES = [
-        { id: 'num_types', strandId: 'number', strandName: '1. Number', title: 'Number Properties, Powers & Integers', badge: 'Year 7 • Number', topics: ['Prime factorisation', 'Powers and expanded form', 'Order of operations', 'Integers and roots'] },
-        { id: 'num_ops', strandId: 'number', strandName: '1. Number', title: 'Fractions, Decimals & Percentages', badge: 'Year 7 • Number', topics: ['Fraction operations', 'Decimal operations', 'Conversions', 'Percentage discounts'] },
-        { id: 'num_prop', strandId: 'number', strandName: '1. Number', title: 'Ratios, Rates & Financial Maths', badge: 'Year 7 • Number', topics: ['Ratio sharing', 'Unit rates and speed', 'Budgets and best buys', 'Percentages'] },
-        { id: 'alg_expr', strandId: 'algebra', strandName: '2. Algebra', title: 'Expressions & Simplifying', badge: 'Year 7 • Algebra', topics: ['Write expressions', 'Combine like terms', 'Distributive property', 'Substitution'] },
-        { id: 'alg_linear', strandId: 'algebra', strandName: '2. Algebra', title: 'Equations & Formulae', badge: 'Year 7 • Algebra', topics: ['One and two-step equations', 'Inverse operations', 'Rearrange formulae', 'Check solutions'] },
-        { id: 'alg_patterns', strandId: 'algebra', strandName: '2. Algebra', title: 'Linear Patterns & Coordinates', badge: 'Year 7 • Algebra', topics: ['Linear patterns', 'Rules with variables', 'Tables and graphs', 'Four-quadrant coordinates'] },
-        { id: 'meas_units', strandId: 'measurement', strandName: '3. Measurement', title: 'Metric Conversions & Units', badge: 'Year 7 • Measurement', topics: ['Metric conversions', 'Decimal units', 'Appropriate units', 'Estimate and measure'] },
-        { id: 'meas_area_vol', strandId: 'measurement', strandName: '3. Measurement', title: 'Perimeter, Area, Volume & Speed', badge: 'Year 7 • Measurement', topics: ['Perimeter and area', 'Composite shapes', 'Prism volume', 'Distance time and speed'] },
-        { id: 'meas_time', strandId: 'measurement', strandName: '3. Measurement', title: 'Time, Duration & Timetables', badge: 'Year 7 • Measurement', topics: ['Time conversions', 'Elapsed time', 'Schedules', 'Journey duration'] },
-        { id: 'geom_shapes', strandId: 'geometry', strandName: '4. Geometry', title: 'Angles, Triangles & Polygons', badge: 'Year 7 • Geometry', topics: ['Angle relationships', 'Triangle classification', 'Polygon angles', 'Circle radius and diameter'] },
-        { id: 'geom_trans', strandId: 'geometry', strandName: '4. Geometry', title: 'Transformations, Scale & Grids', badge: 'Year 7 • Geometry', topics: ['Transformations', 'Scale maps', 'Grid references', 'Coordinates'] },
-        { id: 'stat_enquiry', strandId: 'statistics', strandName: '5. Statistics', title: 'Statistical Enquiry & Variables', badge: 'Year 7 • Statistics', topics: ['Statistical questions', 'Plan data collection', 'Variables', 'Check data'] },
-        { id: 'stat_analysis', strandId: 'statistics', strandName: '5. Statistics', title: 'Graphs, Averages & Range', badge: 'Year 7 • Statistics', topics: ['Dot plots and graphs', 'Mean median mode', 'Range and outliers', 'Interpret data'] },
-        { id: 'stat_trends', strandId: 'statistics', strandName: '5. Statistics', title: 'Data Distributions & Outliers', badge: 'Year 7 • Statistics', topics: ['Shape and spread', 'Outliers', 'Compare groups', 'Explain trends'] },
-        { id: 'prob_exp', strandId: 'probability', strandName: '6. Probability', title: 'Experimental Probability', badge: 'Year 7 • Probability', topics: ['Chance experiments', 'Relative frequency', 'Experimental versus theoretical', 'Law of Large Numbers'] },
-        { id: 'prob_theo', strandId: 'probability', strandName: '6. Probability', title: 'Theoretical Probability & Complements', badge: 'Year 7 • Probability', topics: ['Sample spaces', 'Simple probabilities', 'Likelihood', 'Complementary events'] }
-      ];
+      // Curriculum data is loaded from a year-specific, entitlement-protected script.
+      const CURRICULUM_MODULES = window.MATH_CURRICULUM_MODULES;
+      if (!Array.isArray(CURRICULUM_MODULES)) throw new Error('Curriculum data is unavailable.');
 
       // =========================================================================
-      // DYNAMIC SVG VISUAL DIAGRAM GENERATOR FOR ALL 6 STRANDS
+            // DYNAMIC SVG VISUAL DIAGRAM GENERATOR FOR ALL 6 STRANDS
       // =========================================================================
       function makeSvgCard(title, innerSvg) {
         return (
@@ -765,7 +748,7 @@
         return questions;
       }
 
-      // Generate 25 Mixed Questions across all 16 sub-strands of the Year 7 NZ Curriculum
+      // Generate a mixed practice set across all curriculum modules.
       function generateFullCurriculumRandom25(seedOffset) {
         const list = [];
         for (let i = 0; i < 25; i++) {
@@ -796,7 +779,7 @@
         timerHandle: null
       };
 
-      const PROGRESS_STORAGE_KEY = 'mathAcademyProgress:year7';
+      const PROGRESS_STORAGE_KEY = 'mathAcademyProgress:year' + CURRENT_YEAR;
       let progressSaveTimeout = null;
 
       function saveProgress() {
@@ -857,7 +840,7 @@
       function launchModuleWorkbook(moduleId, targetView) {
         state.activeModuleId = moduleId;
         if (moduleId === 'random_25') {
-          state.activeModuleTitle = '25-Question Full Year 7 NZ Curriculum Random Mix';
+          state.activeModuleTitle = '25-Question Full Year ' + CURRENT_YEAR + ' NZ Curriculum Random Mix';
           state.questions = wrapRawQuestionsIntoState(generateFullCurriculumRandom25(state.seedCounter));
         } else {
           const mod = CURRICULUM_MODULES.find(function (m) { return m.id === moduleId; }) || CURRICULUM_MODULES[0];
@@ -966,31 +949,31 @@
       // =========================================================================
       const STRAND_META = {
         all: {
-          title: 'Year 7 New Zealand Mathematics Curriculum — All 6 Strands Hub',
+          title: 'Year ' + CURRENT_YEAR + ' New Zealand Mathematics Curriculum — All 6 Strands Hub',
           desc: 'Use the Strand Page tabs above to view each curriculum strand on its own separate page, or launch any 10-question sub-strand workbook below.'
         },
         number: {
-          title: 'Page 1: Number Strand — Year 7 NZ Curriculum',
+          title: 'Page 1: Number Strand — Year ' + CURRENT_YEAR + ' NZ Curriculum',
           desc: 'Covers Types of Numbers (primes, squares/cubes, powers of 10, negative integers, rationals), Operations & Conversions, and Proportional Reasoning.'
         },
         algebra: {
-          title: 'Page 2: Algebra Strand — Year 7 NZ Curriculum',
+          title: 'Page 2: Algebra Strand — Year ' + CURRENT_YEAR + ' NZ Curriculum',
           desc: 'Covers Expressions & Factorising, Linear Equations & Inequalities, Formula Substitution, Growing Patterns, Linear Sequences, and the Cartesian Coordinate Plane.'
         },
         measurement: {
-          title: 'Page 3: Measurement Strand — Year 7 NZ Curriculum',
+          title: 'Page 3: Measurement Strand — Year ' + CURRENT_YEAR + ' NZ Curriculum',
           desc: 'Covers Metric Conversions (length, area, volume, capacity), Perimeter & Area of Composite Shapes/Trapeziums, Volume of Prisms/Cylinders, and Practical Time & Timetables.'
         },
         geometry: {
-          title: 'Page 4: Geometry Strand — Year 7 NZ Curriculum',
+          title: 'Page 4: Geometry Strand — Year ' + CURRENT_YEAR + ' NZ Curriculum',
           desc: 'Covers Circle Parts (radius, diameter, circumference), Polygon/Triangle/Quadrilateral Angles, Transformations, Scale Enlargements, and Map Grids.'
         },
         statistics: {
-          title: 'Page 5: Statistics Strand — Year 7 NZ Curriculum',
+          title: 'Page 5: Statistics Strand — Year ' + CURRENT_YEAR + ' NZ Curriculum',
           desc: 'Covers PPDAC Statistical Enquiry, Categorical/Numerical Variables, Data Displays, Mean/Median/Mode/Range, Outliers, and Positive/Negative Skewness.'
         },
         probability: {
-          title: 'Page 6: Probability Strand — Year 7 NZ Curriculum',
+          title: 'Page 6: Probability Strand — Year ' + CURRENT_YEAR + ' NZ Curriculum',
           desc: 'Covers Experimental Probability, Law of Large Numbers, Theoretical Probability, Tree Diagrams, Sample Space Diagrams, and Complementary Events.'
         }
       };
@@ -1409,7 +1392,7 @@
       function renderPrintoutCards() {
         const totalQ = state.questions.length;
         const completedCount = getCompletedCount();
-        printoutHeading.textContent = "📄 Year 7 NZ Mathematics — " + state.activeModuleTitle + " Answer Key";
+        printoutHeading.textContent = "📄 Year " + CURRENT_YEAR + " NZ Mathematics — " + state.activeModuleTitle + " Answer Key";
         printoutSubtitle.textContent =
           'Completed ' + completedCount + ' of ' + totalQ + ' Questions  •  Stars: ' + state.stars + ' ⭐';
 
@@ -1472,7 +1455,7 @@
           // Top Page Header Box
           s += '0.91 0.96 0.99 rg 0.01 0.52 0.78 RG 1.2 w 30 772 535 46 re B\n';
           s += '0.06 0.09 0.16 rg\n';
-          s += 'BT /F2 13 Tf 42 798 Td (' + pdfEscapeText("Year 7 NZ Mathematics Workbook - Answer Printout") + ') Tj ET\n';
+          s += 'BT /F2 13 Tf 42 798 Td (' + pdfEscapeText("Year " + CURRENT_YEAR + " NZ Mathematics Workbook - Answer Printout") + ') Tj ET\n';
           s += '0.30 0.38 0.48 rg\n';
           const subLine = 'Module: ' + state.activeModuleTitle + '  |  Completed: ' + completedCount + '/' + totalQ + '  |  Date: ' + dateStr + '  |  Page ' + (p + 1) + '/' + numPages + ' (Q' + startQ + '-Q' + endQ + ')';
           s += 'BT /F1 8.5 Tf 42 782 Td (' + pdfEscapeText(subLine.slice(0, 95)) + ') Tj ET\n';
@@ -1896,3 +1879,4 @@
         launchModuleWorkbook('num_types', 'curriculum');
       }
     })();
+
