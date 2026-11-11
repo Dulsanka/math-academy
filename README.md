@@ -2,6 +2,8 @@
 
 A browser-based mathematics practice suite for New Zealand learners in Years 6–11, plus a foundational arithmetic workbook. The access service provides sign-in, per-user workbook entitlements, and administrator tools for managing accounts.
 
+**Live application:** [Open Math Academy](https://math-academy.dulsanka-math-academy.workers.dev/)
+
 ## Workbooks and access files
 
 | File | Description |
@@ -36,7 +38,7 @@ Open `http://localhost:3000`. The local server stores users in `data/users.json`
 
 ## Free Cloudflare deployment
 
-This project is configured for a Cloudflare Worker with static assets and a D1 database. The Worker checks entitlements before returning workbook HTML or question JavaScript. The database stores password hashes, active status, entitlements, sessions, and login throttling. GitHub Pages cannot run these checks, so use the `workers.dev` URL Cloudflare gives the Worker. Cloudflare's free plans have daily request and database usage limits; if a limit is reached, access may pause until the quota resets.
+This project is configured for a Cloudflare Worker with static assets and a D1 database. The Worker checks entitlements before returning workbook HTML or question JavaScript. The database stores password hashes, active status, entitlements, sessions, and login throttling. The live application is [https://math-academy.dulsanka-math-academy.workers.dev/](https://math-academy.dulsanka-math-academy.workers.dev/). GitHub Pages cannot run these checks. Cloudflare's free plans have daily request and database usage limits; if a limit is reached, access may pause until the quota resets.
 
 ### One-time setup
 
@@ -85,7 +87,7 @@ The included `.github/workflows/deploy.yml` applies D1 migrations and deploys th
 2. In GitHub, open the repository **Settings → Secrets and variables → Actions → New repository secret**. Add `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` with the values from Cloudflare.
 3. Commit and push changes to `main`. Check the repository's **Actions** tab for the deployment result. Future pushes update the Worker automatically.
 
-Never add Cloudflare tokens or passwords to a source file or commit them to GitHub. The GitHub Pages address `https://dulsanka.github.io/math-academy/` is a static copy and cannot provide this access control. Disable GitHub Pages publication. Because this repository is currently public, workbook source files are also visible on GitHub; make the repository private if the workbook content itself should be restricted.
+Never add Cloudflare tokens or passwords to a source file or commit them to GitHub. The old GitHub Pages address `https://dulsanka.github.io/math-academy/` is a static copy and cannot provide this access control. Disable GitHub Pages publication. Because this repository is currently public, workbook source files are also visible on GitHub; make the repository private if the workbook content itself should be restricted.
 
 ## Technology
 
