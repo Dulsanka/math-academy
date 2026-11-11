@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Manage Users | NZ Mathematics Academy</title>
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+  <main class="admin-shell">
+    <header class="admin-header">
+      <div><p class="eyebrow">NZ Mathematics Academy</p><h1>User access management</h1><p>Grant workbook access, disable accounts, or reset a password.</p></div>
+      <a href="/">Return to workbooks</a>
+    </header>
+    <div id="admin-status" class="status" role="status" aria-live="polite"></div>
+    <section class="panel">
+      <h2>Create a student account</h2>
+      <form id="create-user-form" class="create-form">
+        <label>Username<input name="username" required minlength="3" maxlength="32" autocomplete="off" /></label>
+        <label>Temporary password<input name="password" type="password" required minlength="12" autocomplete="new-password" /></label>
+        <fieldset><legend>Workbook access</legend><div class="entitlement-grid" data-entitlements></div></fieldset>
+        <button type="submit">Create account</button>
+      </form>
+    </section>
+    <section class="panel">
+      <div class="section-head"><div><h2>Accounts</h2><p>Changes take effect on the user’s next request.</p></div><button id="refresh-users" class="secondary" type="button">Refresh</button></div>
+      <div id="users-list" class="users-list"></div>
+    </section>
+  </main>
+  <script src="admin.js" defer></script>
+</body>
+</html>

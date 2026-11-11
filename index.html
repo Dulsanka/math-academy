@@ -8,8 +8,22 @@
   <link rel="stylesheet" href="assets/css/site.css" />
 </head>
 <body>
+  <section id="auth-gate" class="auth-gate" aria-labelledby="auth-title">
+    <form id="login-form" class="auth-card">
+      <div class="auth-mark">NZ∑</div>
+      <h1 id="auth-title">Sign in to Mathematics Academy</h1>
+      <p>Your account determines which workbooks you can open.</p>
+      <label for="login-username">Username</label>
+      <input id="login-username" name="username" type="text" autocomplete="username" required maxlength="32" />
+      <label for="login-password">Password</label>
+      <input id="login-password" name="password" type="password" autocomplete="current-password" required />
+      <button type="submit" class="auth-submit">Sign in</button>
+      <div id="login-status" class="auth-status" role="status" aria-live="polite"></div>
+    </form>
+  </section>
+
   <!-- PERSISTENT TOP MASTER NAVIGATION DOCK -->
-  <header class="master-dock">
+  <header class="master-dock requires-auth hidden">
     <div id="dock-home-brand" class="dock-brand" title="Return to Mathematics Academy Landing Page">
       <div class="dock-logo">NZ∑</div>
       <div class="dock-brand-text">
@@ -20,7 +34,7 @@
 
     <nav class="dock-switcher" aria-label="Workbook Selector">
       <button type="button" class="dock-wb-btn active" data-select-wb="home">
-        🏠 All 7 Workbooks
+        🏠 Academy Home
       </button>
       <button type="button" class="dock-wb-btn" data-select-wb="wb_arith">
         ➗ 1. Arithmetic &amp; Division
@@ -52,6 +66,8 @@
       <button type="button" id="btn-open-calculator" class="dock-tool-btn">
         🧮 Calculator &amp; Formulas
       </button>
+      <a id="btn-admin-users" class="dock-tool-btn hidden" href="admin.html">Manage Users</a>
+      <button type="button" id="btn-sign-out" class="dock-tool-btn">Sign out</button>
       <button type="button" id="btn-read-aloud" class="dock-tool-btn" title="Read Active Question Aloud">
         🔊 Read Aloud
       </button>
@@ -59,13 +75,13 @@
   </header>
 
   <!-- MASTER LANDING PAGE (SHOWS ALL 7 WORKBOOK OPTIONS) -->
-  <main id="landing-portal-view" class="landing-container">
+  <main id="landing-portal-view" class="landing-container requires-auth hidden">
     <section class="hero-banner">
       <div class="hero-left">
         <span class="hero-pill">✨ NEW ZEALAND CURRICULUM (TE MĀTAIAHO) &amp; FOUNDATIONS SUITE</span>
         <h2>Choose Your Mathematics Workbook</h2>
         <p>
-          Welcome to the complete offline Mathematics Academy! Select any of the <strong>7 Interactive Workbooks</strong> below to practice step-by-step guided problems, test yourself with unassisted 25-question exams, take notes or draw on the digital scratchpad, and generate multi-page PDF answer keys.
+          Welcome to the Mathematics Academy! Open the workbooks available to your account to practise guided problems, take notes or use the digital scratchpad, and generate printable answer keys.
         </p>
       </div>
 
@@ -91,6 +107,8 @@
         Switch between workbooks anytime using the top navigation bar
       </span>
     </div>
+
+    <p id="no-workbooks-message" class="no-workbooks-message hidden">No workbooks are assigned to this account yet. Ask your academy administrator to grant access.</p>
 
     <!-- 7 WORKBOOK OPTIONS GRID -->
     <section class="workbooks-grid" aria-label="7 Mathematics Workbooks">

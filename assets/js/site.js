@@ -1,4 +1,78 @@
     (function () {
+      const authGate = document.getElementById('auth-gate');
+      const loginForm = document.getElementById('login-form');
+      const loginStatus = document.getElementById('login-status');
+      const allowedWorkbooks = new Set();
+      let signedIn = false;
+
+      function entitlementFor(wbKey) {
+        if (wbKey === 'wb_arith') return 'arithmetic';
+        if (wbKey && wbKey.indexOf('wb_y') === 0) return 'year' + wbKey.slice(4);
+        return '';
+      }
+
+      async function authRequest(url, options) {
+        const response = await fetch(url, Object.assign({ credentials: 'same-origin' }, options || {}));
+        const payload = await response.json().catch(function () { return {}; });
+        if (!response.ok) throw new Error(payload.error || 'The request could not be completed.');
+        return payload;
+      }
+
+      function applyEntitlements(payload) {
+        signedIn = true;
+        allowedWorkbooks.clear();
+        (payload.allowedWorkbooks || []).forEach(function (key) { allowedWorkbooks.add(key); });
+        document.querySelectorAll('.requires-auth').forEach(function (el) { el.classList.remove('hidden'); });
+        authGate.classList.add('hidden');
+        document.querySelectorAll('.dock-wb-btn[data-select-wb], [data-launch-wb]').forEach(function (el) {
+          const key = el.getAttribute('data-select-wb') || el.getAttribute('data-launch-wb');
+          const entitlement = entitlementFor(key);
+          const allowed = key === 'home' || allowedWorkbooks.has(entitlement);
+          el.classList.toggle('hidden', !allowed);
+        });
+        document.getElementById('no-workbooks-message').classList.toggle('hidden', allowedWorkbooks.size > 0);
+        document.getElementById('btn-admin-users').classList.toggle('hidden', !payload.user || payload.user.role !== 'admin');
+        loginStatus.textContent = '';
+      }
+
+      function showSignedOut() {
+        signedIn = false;
+        document.querySelectorAll('.requires-auth').forEach(function (el) { el.classList.add('hidden'); });
+        workbookViewportWrap.classList.add('hidden');
+        authGate.classList.remove('hidden');
+      }
+
+      loginForm.addEventListener('submit', async function (event) {
+        event.preventDefault();
+        const submit = loginForm.querySelector('button[type="submit"]');
+        submit.disabled = true;
+        loginStatus.textContent = 'Signing in…';
+        try {
+          const payload = await authRequest('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: loginForm.username.value, password: loginForm.password.value })
+          });
+          loginForm.reset();
+          applyEntitlements(payload);
+        } catch (error) { loginStatus.textContent = error.message; }
+        finally { submit.disabled = false; }
+      });
+
+      document.getElementById('btn-sign-out').addEventListener('click', async function () {
+        try { await authRequest('/api/auth/logout', { method: 'POST' }); } catch (_) {}
+        document.getElementById('workbook-iframe').src = 'about:blank';
+        showSignedOut();
+      });
+
+      authRequest('/api/auth/me').then(function (payload) {
+        if (payload.authenticated) applyEntitlements(payload);
+        else showSignedOut();
+      }).catch(function () {
+        showSignedOut();
+        loginStatus.textContent = 'The access service is unavailable. Please try again later.';
+      });
+
       const WORKBOOK_FILES = {
         wb_arith: '1_interactive_math_workbook.html',
         wb_y6: '6_year6_nz_mathematics_workbook.html',
@@ -19,6 +93,9 @@
       let currentWorkbookKey = 'home';
 
       function selectWorkbook(wbKey) {
+        if (!signedIn) return;
+        const entitlementKey = entitlementFor(wbKey);
+        if (wbKey !== 'home' && !allowedWorkbooks.has(entitlementKey)) return;
         currentWorkbookKey = wbKey;
         dockWbBtns.forEach(function (btn) {
           btn.classList.toggle('active', btn.getAttribute('data-select-wb') === wbKey);

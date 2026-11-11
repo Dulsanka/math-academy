@@ -1,0 +1,6 @@
+# User records and secrets are runtime data, never commit them.
+data/
+.env
+.env.*
+!.env.example
+*.tmp

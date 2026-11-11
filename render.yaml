@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: math-academy
+    runtime: node
+    plan: starter
+    branch: main
+    buildCommand: 'true'
+    startCommand: node server.js
+    autoDeployTrigger: commit
+    healthCheckPath: /api/auth/me
+    disk:
+      name: math-academy-user-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATA_DIR
+        value: /var/data
+      - key: BOOTSTRAP_ADMIN_USERNAME
+        sync: false
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
