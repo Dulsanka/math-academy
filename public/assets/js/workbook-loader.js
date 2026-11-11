@@ -1,5 +1,5 @@
 (function () {
-  const match = window.location.pathname.match(/year(6|7|8|9|10|11)(?:_|\.|$)/i);
+  const match = window.location.pathname.match(/year(6|7|8|9|10|11|12|13)(?:_|\.|$)/i);
   if (!match) return;
 
   const year = Number(match[1]);
@@ -10,7 +10,9 @@
     8: 'Phase 3',
     9: 'Year 9 / Level 4–5',
     10: 'Year 10 / Level 5',
-    11: 'Year 11 / NCEA Level 1'
+    11: 'Year 11 / NCEA Level 1',
+    12: 'Year 12 / NCEA Level 2',
+    13: 'Year 13 / NCEA Level 3'
   };
 
   document.body.dataset.theme = 'year' + year;
@@ -30,7 +32,9 @@
 
   const scripts = year <= 7
     ? ['/assets/js/year' + year + '-curriculum.js', '/assets/js/curriculum-workbook.js']
-    : ['/assets/js/year' + year + '-workbook.js'];
+    : year >= 12
+      ? ['/assets/js/year' + year + '-curriculum.js', '/assets/js/senior-workbook.js']
+      : ['/assets/js/year' + year + '-workbook.js'];
 
   scripts.reduce(function (loaded, source) {
     return loaded.then(function () {

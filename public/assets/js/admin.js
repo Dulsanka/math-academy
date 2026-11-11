@@ -1,7 +1,8 @@
 (function () {
   const WORKBOOKS = [
     ['arithmetic', 'Arithmetic & Division'], ['year6', 'Year 6 NZ'], ['year7', 'Year 7 NZ'],
-    ['year8', 'Year 8 NZ'], ['year9', 'Year 9 NZ'], ['year10', 'Year 10 NZ'], ['year11', 'Year 11 NZ']
+    ['year8', 'Year 8 NZ'], ['year9', 'Year 9 NZ'], ['year10', 'Year 10 NZ'], ['year11', 'Year 11 NZ'],
+    ['year12', 'Year 12 NZ (NCEA Level 2)'], ['year13', 'Year 13 NZ (NCEA Level 3)']
   ];
   const status = document.getElementById('admin-status');
   const usersList = document.getElementById('users-list');

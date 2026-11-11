@@ -1,6 +1,6 @@
 ﻿# NZ Interactive Mathematics Workbooks
 
-A browser-based mathematics practice suite for New Zealand learners in Years 6–11, plus a foundational arithmetic workbook. The access service provides sign-in, per-user workbook entitlements, and administrator tools for managing accounts.
+A browser-based mathematics practice suite for New Zealand learners in Years 6-13, plus a foundational arithmetic workbook. The access service provides sign-in, per-user workbook entitlements, and administrator tools for managing accounts.
 
 **Live application:** [Open Math Academy](https://math-academy.dulsanka-math-academy.workers.dev/)
 
@@ -23,7 +23,7 @@ migrations/                D1 database schema changes
 wrangler.toml              Cloudflare Worker, assets, and D1 configuration
 ```
 
-The curriculum workbooks for Years 6–11 use one page layout in `public/workbooks/curriculum.html`. `public/assets/js/workbook-loader.js` selects the year’s curriculum code from the existing page URL. Years 6 and 7 share an engine and keep their curriculum data in separate protected files. The arithmetic workbook has its own page and engine.
+The curriculum workbooks for Years 6-13 use one page layout in `public/workbooks/curriculum.html`. `public/assets/js/workbook-loader.js` selects the year’s curriculum code from the existing page URL. Years 6 and 7 share an engine and keep their curriculum data in separate protected files. Years 12 and 13 share a senior practice engine with separate curriculum data. The arithmetic workbook has its own page and engine.
 
 The familiar workbook URLs remain the public routes. The Worker checks each route’s entitlement before serving its mapped file or curriculum script. Both server entry points use the shared route configuration in `src/workbooks.mjs`.
 

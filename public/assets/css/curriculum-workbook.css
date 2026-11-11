@@ -983,3 +983,15 @@
       --primary-dark: #115e59;
       --brand-gradient: linear-gradient(135deg, #0f766e, #0284c7);
     }
+
+    body[data-theme="year12"] {
+      --primary: #7c3aed;
+      --primary-dark: #6d28d9;
+      --brand-gradient: linear-gradient(135deg, #7c3aed, #4f46e5);
+    }
+
+    body[data-theme="year13"] {
+      --primary: #be123c;
+      --primary-dark: #9f1239;
+      --brand-gradient: linear-gradient(135deg, #be123c, #7c3aed);
+    }

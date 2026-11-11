@@ -20,7 +20,7 @@ The browser files live under `public/`. Cloudflare uploads only that directory a
 - `src/local-server.js` provides the equivalent local development service. It stores local accounts in `data/users.json` and is not used by the Cloudflare deployment.
 - `src/workbooks.mjs` is the shared route and asset manifest used by both server entry points.
 - `public/index.html` and `public/assets/js/site.js` provide sign-in and navigation. The browser hides workbook links based on entitlements returned by the Worker; the Worker independently enforces access to every protected page and script.
-- `public/workbooks/curriculum.html` is the shared layout for Years 6–11. The URL keeps its established year-specific name, and `workbook-loader.js` selects the matching curriculum engine.
+- `public/workbooks/curriculum.html` is the shared layout for Years 6-13. The URL keeps its established year-specific name, and `workbook-loader.js` selects the matching curriculum engine. Years 12 and 13 share a senior practice engine and load separate protected curriculum data.
 - `migrations/` contains ordered, additive D1 schema changes. The GitHub Actions workflow applies migrations before deployment.
 
 ## Adding a curriculum year

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
-  <title>NZ Mathematics Academy — 7-in-1 Interactive Workbook Suite</title>
+  <title>NZ Mathematics Academy — 9 Interactive Workbooks</title>
   <link rel="stylesheet" href="/assets/css/site.css" />
 </head>
 <body>
@@ -28,7 +28,7 @@
       <div class="dock-logo">NZ∑</div>
       <div class="dock-brand-text">
         <h1>NZ Mathematics Master Academy</h1>
-        <p>All-in-One Offline Suite (7 Complete Workbooks)</p>
+        <p>New Zealand Mathematics • 9 Interactive Workbooks</p>
       </div>
     </div>
 
@@ -57,6 +57,12 @@
       <button type="button" class="dock-wb-btn" data-select-wb="wb_y11">
         🎓 7. Year 11 NZ
       </button>
+      <button type="button" class="dock-wb-btn" data-select-wb="wb_y12">
+        🎓 8. Year 12 NZ
+      </button>
+      <button type="button" class="dock-wb-btn" data-select-wb="wb_y13">
+        🎓 9. Year 13 NZ
+      </button>
     </nav>
 
     <div class="dock-tools">
@@ -74,7 +80,7 @@
     </div>
   </header>
 
-  <!-- MASTER LANDING PAGE (SHOWS ALL 7 WORKBOOK OPTIONS) -->
+  <!-- MASTER LANDING PAGE (SHOWS ALL 9 WORKBOOK OPTIONS) -->
   <main id="landing-portal-view" class="landing-container requires-auth hidden">
     <section class="hero-banner">
       <div class="hero-left">
@@ -87,7 +93,7 @@
 
       <div class="hero-right-cards">
         <div class="hero-stat-box">
-          <div class="hero-stat-num">7</div>
+          <div class="hero-stat-num">9</div>
           <div class="hero-stat-label">Complete Workbooks</div>
         </div>
         <div class="hero-stat-box">
@@ -110,8 +116,8 @@
 
     <p id="no-workbooks-message" class="no-workbooks-message hidden">No workbooks are assigned to this account yet. Ask your academy administrator to grant access.</p>
 
-    <!-- 7 WORKBOOK OPTIONS GRID -->
-    <section class="workbooks-grid" aria-label="7 Mathematics Workbooks">
+    <!-- 9 WORKBOOK OPTIONS GRID -->
+    <section class="workbooks-grid" aria-label="9 Mathematics Workbooks">
       <!-- Option 1: Interactive Math Workbook -->
       <article class="wb-portal-card" data-launch-wb="wb_arith">
         <div>
@@ -241,6 +247,48 @@
         </div>
         <button type="button" class="wb-launch-btn" style="background:#0f766e;" data-launch-wb="wb_y11">
           Open Year 11 NZ Workbook →
+        </button>
+      </article>
+
+      <!-- Option 8: Year 12 NZ Mathematics Workbook -->
+      <article class="wb-portal-card" data-launch-wb="wb_y12">
+        <div>
+          <div class="wb-card-top">
+            <div class="wb-icon-badge" style="background:linear-gradient(135deg, #7c3aed, #4f46e5);">NZ 12</div>
+            <span class="wb-level-pill">Senior • NCEA Level 2</span>
+          </div>
+          <h4>8. Year 12 - NZ Mathematics Workbook</h4>
+          <p>Build Level 2 skills in algebraic methods, calculus, trigonometry, mathematical modelling, statistics and probability.</p>
+          <div class="wb-chip-list">
+            <span class="wb-topic-chip">6 Strand Pages</span>
+            <span class="wb-topic-chip">16 Sub-Strand Modules</span>
+            <span class="wb-topic-chip">25-Q Mixed Practice</span>
+            <span class="wb-topic-chip">PDF Answer Key</span>
+          </div>
+        </div>
+        <button type="button" class="wb-launch-btn" style="background:#7c3aed;" data-launch-wb="wb_y12">
+          Open Year 12 NZ Workbook →
+        </button>
+      </article>
+
+      <!-- Option 9: Year 13 NZ Mathematics Workbook -->
+      <article class="wb-portal-card" data-launch-wb="wb_y13">
+        <div>
+          <div class="wb-card-top">
+            <div class="wb-icon-badge" style="background:linear-gradient(135deg, #be123c, #7c3aed);">NZ 13</div>
+            <span class="wb-level-pill">Senior • NCEA Level 3</span>
+          </div>
+          <h4>9. Year 13 - NZ Mathematics Workbook</h4>
+          <p>Extend calculus, functions, trigonometry, statistical inference, data analysis and probability through senior-level practice.</p>
+          <div class="wb-chip-list">
+            <span class="wb-topic-chip">6 Strand Pages</span>
+            <span class="wb-topic-chip">16 Sub-Strand Modules</span>
+            <span class="wb-topic-chip">25-Q Mixed Practice</span>
+            <span class="wb-topic-chip">PDF Answer Key</span>
+          </div>
+        </div>
+        <button type="button" class="wb-launch-btn" style="background:#be123c;" data-launch-wb="wb_y13">
+          Open Year 13 NZ Workbook →
         </button>
       </article>
     </section>

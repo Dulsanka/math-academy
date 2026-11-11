@@ -41,6 +41,20 @@ const WORKBOOKS = Object.freeze({
     file: 'workbooks/curriculum.html',
     script: '/assets/js/year11-workbook.js',
     loader: '/assets/js/workbook-loader.js'
+  }),
+  year12: Object.freeze({
+    page: '/8_year12_nz_mathematics_workbook.html',
+    file: 'workbooks/curriculum.html',
+    script: '/assets/js/year12-curriculum.js',
+    engine: '/assets/js/senior-workbook.js',
+    loader: '/assets/js/workbook-loader.js'
+  }),
+  year13: Object.freeze({
+    page: '/9_year13_nz_mathematics_workbook.html',
+    file: 'workbooks/curriculum.html',
+    script: '/assets/js/year13-curriculum.js',
+    engine: '/assets/js/senior-workbook.js',
+    loader: '/assets/js/workbook-loader.js'
   })
 });
 

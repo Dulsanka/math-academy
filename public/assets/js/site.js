@@ -80,7 +80,9 @@
         wb_y8: '/2_year8_nz_mathematics_workbook.html',
         wb_y9: '/3_year9_nz_mathematics_workbook.html',
         wb_y10: '/4_year10_nz_mathematics_workbook.html',
-        wb_y11: '/5_year11_nz_mathematics_workbook.html'
+        wb_y11: '/5_year11_nz_mathematics_workbook.html',
+        wb_y12: '/8_year12_nz_mathematics_workbook.html',
+        wb_y13: '/9_year13_nz_mathematics_workbook.html'
       };
 
       const landingPortalView = document.getElementById('landing-portal-view');
