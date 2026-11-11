@@ -1,0 +1,172 @@
+name: CI & Quality Gates
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # --------------------------------------------------------------------------
+  # 1. Static Analysis, Linting & Type Checking
+  # --------------------------------------------------------------------------
+  lint-and-typecheck:
+    name: Code Quality & Types
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check formatting (Prettier)
+        run: npx prettier --check .
+
+      - name: Lint code (ESLint)
+        run: npm run lint
+
+      - name: Type check (TypeScript)
+        run: npx tsc --noEmit
+
+  # --------------------------------------------------------------------------
+  # 2. Dependency & Security Scanning (SAST / CVEs)
+  # --------------------------------------------------------------------------
+  security-audit:
+    name: Security & Vulnerabilities
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Run npm audit
+        run: npm audit --audit-level=high
+
+      - name: Run Trivy vulnerability scanner (Repo Scan)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          ignore-unfixed: true
+          severity: 'HIGH,CRITICAL'
+          exit-code: '1'
+
+  # --------------------------------------------------------------------------
+  # 3. Automated Unit & Integration Testing
+  # --------------------------------------------------------------------------
+  unit-tests:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    needs: [lint-and-typecheck]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run test suite with coverage
+        run: npm test -- --coverage --ci --runInBand
+
+      - name: Archive code coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 14
+
+  # --------------------------------------------------------------------------
+  # 4. End-to-End Automated UAT (Playwright)
+  # --------------------------------------------------------------------------
+  e2e-uat-tests:
+    name: Automated E2E & UAT Tests
+    runs-on: ubuntu-latest
+    needs: [lint-and-typecheck]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Cache Playwright browser binaries
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright browsers & OS dependencies
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps
+
+      - name: Install Playwright system dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps
+
+      - name: Build application
+        run: npm run build
+
+      - name: Run Playwright E2E tests
+        run: npx playwright test
+        env:
+          CI: true
+
+      - name: Upload Playwright test report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14
+
+  # --------------------------------------------------------------------------
+  # 5. Final CI Gatekeeper
+  # --------------------------------------------------------------------------
+  ci-status:
+    name: Merge Gatekeeper
+    runs-on: ubuntu-latest
+    needs: [lint-and-typecheck, security-audit, unit-tests, e2e-uat-tests]
+    if: always()
+    steps:
+      - name: Verify all pipeline stages passed
+        run: |
+          if [ "${{ needs.lint-and-typecheck.result }}" != "success" ] || \
+             [ "${{ needs.security-audit.result }}" != "success" ] || \
+             [ "${{ needs.unit-tests.result }}" != "success" ] || \
+             [ "${{ needs.e2e-uat-tests.result }}" != "success" ]; then
+            echo "CI pipeline failed on one or more quality gates."
+            exit 1
+          fi
+          echo "All quality gates passed successfully. Ready to merge."
