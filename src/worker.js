@@ -377,7 +377,10 @@ async function handleRequest(request, env) {
     return serveAsset(request, env, 'private, no-store', assetPath);
   }
 
-  if (PUBLIC_ASSETS.has(path)) return serveAsset(request, env, 'public, max-age=300');
+  if (PUBLIC_ASSETS.has(path)) {
+    const assetPath = path === '/' ? '/index.html' : undefined;
+    return serveAsset(request, env, 'public, max-age=300', assetPath);
+  }
   return secure(text('Not found.', 404));
 }
 
