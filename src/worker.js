@@ -1,6 +1,7 @@
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
-const PASSWORD_ITERATIONS = 210_000;
+// Cloudflare Workers supports up to 100,000 PBKDF2 iterations per operation.
+const PASSWORD_ITERATIONS = 100_000;
 const SESSION_COOKIE = '__Host-math_academy_session';
 
 const WORKBOOKS = {
