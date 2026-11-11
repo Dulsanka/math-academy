@@ -1,18 +1,10 @@
+import WORKBOOKS from './workbooks.mjs';
+
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 // Cloudflare Workers supports up to 100,000 PBKDF2 iterations per operation.
 const PASSWORD_ITERATIONS = 100_000;
 const SESSION_COOKIE = '__Host-math_academy_session';
-
-const WORKBOOKS = {
-  arithmetic: { page: '/1_interactive_math_workbook.html', script: '/assets/js/interactive-workbook.js' },
-  year6: { page: '/6_year6_nz_mathematics_workbook.html', script: '/assets/js/year6-curriculum.js', engine: '/assets/js/curriculum-workbook.js' },
-  year7: { page: '/7_year7_nz_mathematics_workbook.html', script: '/assets/js/year7-curriculum.js', engine: '/assets/js/curriculum-workbook.js' },
-  year8: { page: '/2_year8_nz_mathematics_workbook.html', script: '/assets/js/year8-workbook.js' },
-  year9: { page: '/3_year9_nz_mathematics_workbook.html', script: '/assets/js/year9-workbook.js' },
-  year10: { page: '/4_year10_nz_mathematics_workbook.html', script: '/assets/js/year10-workbook.js' },
-  year11: { page: '/5_year11_nz_mathematics_workbook.html', script: '/assets/js/year11-workbook.js' }
-};
 
 const PUBLIC_ASSETS = new Set([
   '/', '/index.html', '/assets/css/site.css', '/assets/css/interactive-workbook.css',
@@ -20,6 +12,11 @@ const PUBLIC_ASSETS = new Set([
 ]);
 
 let bootstrapPromise;
+const ADMIN_ASSETS = new Map([
+  ['/admin.html', '/admin.html'],
+  ['/admin.js', '/assets/js/admin.js'],
+  ['/admin.css', '/assets/css/admin.css']
+]);
 
 function json(payload, status = 200, headers = {}) {
   return new Response(JSON.stringify(payload), {
@@ -329,7 +326,7 @@ async function handleApi(request, env, url) {
 function workbooksForPath(pathname) {
   return Object.entries(WORKBOOKS).filter(([, workbook]) => {
     const pageAlias = workbook.page.slice(0, -'.html'.length);
-    return pathname === workbook.page || pathname === pageAlias || pathname === workbook.script || pathname === workbook.engine;
+    return pathname === workbook.page || pathname === pageAlias || [workbook.script, workbook.engine, workbook.loader].includes(pathname);
   });
 }
 
@@ -361,9 +358,9 @@ async function handleRequest(request, env) {
   if (request.method !== 'GET' && request.method !== 'HEAD') return secure(text('Method not allowed.', 405, { Allow: 'GET, HEAD' }));
   const auth = await getAuth(request, env);
 
-  if (path === '/admin.html' || path === '/admin.js' || path === '/admin.css') {
+  if (ADMIN_ASSETS.has(path)) {
     if (!auth || auth.user.role !== 'admin') return secure(text(auth ? 'Administrator access required.' : 'Please sign in as an administrator.', auth ? 403 : 401));
-    return serveAsset(request, env, 'private, no-store');
+    return serveAsset(request, env, 'private, no-store', ADMIN_ASSETS.get(path));
   }
 
   const matchingWorkbooks = workbooksForPath(path);
@@ -371,7 +368,10 @@ async function handleRequest(request, env) {
     const allowed = auth && (auth.user.role === 'admin' || matchingWorkbooks.some(([key]) => auth.user.entitlements.includes(key)));
     if (!allowed) return secure(text(auth ? 'This account does not have access to this workbook.' : 'Sign in is required.', auth ? 403 : 401));
     const pageMatch = matchingWorkbooks.find(([, workbook]) => path === workbook.page || path === workbook.page.slice(0, -'.html'.length));
-    const assetPath = pageMatch && path !== pageMatch[1].page ? pageMatch[1].page : undefined;
+    const scriptMatch = matchingWorkbooks.find(([, workbook]) => path === workbook.script);
+    const engineMatch = matchingWorkbooks.find(([, workbook]) => path === workbook.engine);
+    const loaderMatch = matchingWorkbooks.find(([, workbook]) => path === workbook.loader);
+    const assetPath = pageMatch ? '/' + pageMatch[1].file : scriptMatch ? scriptMatch[1].script : engineMatch ? engineMatch[1].engine : loaderMatch[1].loader;
     return serveAsset(request, env, 'private, no-store', assetPath);
   }
 

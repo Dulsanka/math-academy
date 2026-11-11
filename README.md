@@ -4,24 +4,30 @@ A browser-based mathematics practice suite for New Zealand learners in Years 6�
 
 **Live application:** [Open Math Academy](https://math-academy.dulsanka-math-academy.workers.dev/)
 
-## Workbooks and access files
+## Project structure
 
-| File | Description |
-| --- | --- |
-| `index.html` | Sign-in page and navigation hub for entitled workbooks |
-| `admin.html` | Administrator-only user and entitlement management |
-| `src/worker.js` | Cloudflare Worker API and protected page delivery |
-| `migrations/0001_init.sql` | D1 tables for accounts, sessions, and login throttling |
-| `server.js` | Optional local Node.js server |
-| `1_interactive_math_workbook.html` | Configurable arithmetic and long-division practice |
-| `6_year6_nz_mathematics_workbook.html` | Year 6 curriculum workbook |
-| `7_year7_nz_mathematics_workbook.html` | Year 7 curriculum workbook |
-| `assets/js/curriculum-workbook.js` | Shared Year 6 and Year 7 workbook engine |
-| `assets/js/year6-curriculum.js`, `assets/js/year7-curriculum.js` | Entitlement-protected curriculum data for each year |
-| `2_year8_nz_mathematics_workbook.html` | Year 8 curriculum workbook |
-| `3_year9_nz_mathematics_workbook.html` | Year 9 curriculum workbook |
-| `4_year10_nz_mathematics_workbook.html` | Year 10 curriculum workbook |
-| `5_year11_nz_mathematics_workbook.html` | Year 11 curriculum workbook |
+```text
+public/                    Browser pages and static assets deployed by Cloudflare
+  index.html               Sign-in and workbook navigation
+  admin.html               Administrator-only account management
+  workbooks/               Shared curriculum page and arithmetic page
+  assets/css/              Site, admin, and workbook styles
+  assets/js/               Login, workbook loader, and curriculum engines/data
+src/                       Server-side entry points
+  worker.js                Cloudflare API, sessions, entitlements, protected files
+  local-server.js          Optional local Node.js access server
+  workbooks.mjs            Shared routes, files, scripts, and entitlements map
+server.js                  Backward-compatible local start command
+migrations/                D1 database schema changes
+.github/workflows/         GitHub Actions deployment workflow
+wrangler.toml              Cloudflare Worker, assets, and D1 configuration
+```
+
+The curriculum workbooks for Years 6–11 use one page layout in `public/workbooks/curriculum.html`. `public/assets/js/workbook-loader.js` selects the year’s curriculum code from the existing page URL. Years 6 and 7 share an engine and keep their curriculum data in separate protected files. The arithmetic workbook has its own page and engine.
+
+The familiar workbook URLs remain the public routes. The Worker checks each route’s entitlement before serving its mapped file or curriculum script. Both server entry points use the shared route configuration in `src/workbooks.mjs`.
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for request flow and the steps for adding another curriculum year.
 
 The workbooks include guided questions with immediate feedback, curriculum topics by strand, random practice, progress indicators, stars, streaks, timers, tutor mode, notes, a drawing pad, printable answer sheets, topic guides, a calculator, and browser-local progress recovery. Progress is saved in each learner's browser and does not sync between devices.
 

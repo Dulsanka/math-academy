@@ -74,13 +74,13 @@
       });
 
       const WORKBOOK_FILES = {
-        wb_arith: '1_interactive_math_workbook.html',
-        wb_y6: '6_year6_nz_mathematics_workbook.html',
-        wb_y7: '7_year7_nz_mathematics_workbook.html',
-        wb_y8: '2_year8_nz_mathematics_workbook.html',
-        wb_y9: '3_year9_nz_mathematics_workbook.html',
-        wb_y10: '4_year10_nz_mathematics_workbook.html',
-        wb_y11: '5_year11_nz_mathematics_workbook.html'
+        wb_arith: '/1_interactive_math_workbook.html',
+        wb_y6: '/6_year6_nz_mathematics_workbook.html',
+        wb_y7: '/7_year7_nz_mathematics_workbook.html',
+        wb_y8: '/2_year8_nz_mathematics_workbook.html',
+        wb_y9: '/3_year9_nz_mathematics_workbook.html',
+        wb_y10: '/4_year10_nz_mathematics_workbook.html',
+        wb_y11: '/5_year11_nz_mathematics_workbook.html'
       };
 
       const landingPortalView = document.getElementById('landing-portal-view');
