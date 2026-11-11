@@ -328,13 +328,15 @@ async function handleApi(request, env, url) {
 
 function workbookForPath(pathname) {
   for (const [key, workbook] of Object.entries(WORKBOOKS)) {
-    if (pathname === workbook.page || pathname === workbook.script) return key;
+    const pageAlias = workbook.page.slice(0, -'.html'.length);
+    if (pathname === workbook.page || pathname === pageAlias || pathname === workbook.script) return key;
   }
   return null;
 }
 
-async function serveAsset(request, env, cacheControl) {
-  const response = await env.ASSETS.fetch(request);
+async function serveAsset(request, env, cacheControl, assetPath) {
+  const assetRequest = assetPath ? new Request(new URL(assetPath, request.url), request) : request;
+  const response = await env.ASSETS.fetch(assetRequest);
   const headers = new Headers(response.headers);
   headers.set('Cache-Control', cacheControl);
   return secure(new Response(response.body, { status: response.status, statusText: response.statusText, headers }));
@@ -369,7 +371,10 @@ async function handleRequest(request, env) {
   if (workbookKey) {
     const allowed = auth && (auth.user.role === 'admin' || auth.user.entitlements.includes(workbookKey));
     if (!allowed) return secure(text(auth ? 'This account does not have access to this workbook.' : 'Sign in is required.', auth ? 403 : 401));
-    return serveAsset(request, env, 'private, no-store');
+    const workbook = WORKBOOKS[workbookKey];
+    const pageAlias = workbook.page.slice(0, -'.html'.length);
+    const assetPath = path === pageAlias ? workbook.page : undefined;
+    return serveAsset(request, env, 'private, no-store', assetPath);
   }
 
   if (PUBLIC_ASSETS.has(path)) return serveAsset(request, env, 'public, max-age=300');
