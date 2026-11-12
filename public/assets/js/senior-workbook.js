@@ -139,6 +139,7 @@
       };
 
       const PROGRESS_STORAGE_KEY = window.mathAcademyProgressKey('year' + CURRENT_YEAR);
+      let progressSaveTimeout;
 
       function saveProgress() {
         try {
@@ -980,7 +981,23 @@
       // =========================================================================
       // VIEW SWITCHING & EVENT LISTENERS
       // =========================================================================
+      function hasRenderableQuestions() {
+        return Array.isArray(state.questions) && state.questions.length > 0 &&
+          state.questions.every(function (question) {
+            return question && typeof question.prompt === 'string' && question.prompt.trim() &&
+              typeof question.topic === 'string' && question.topic.trim() &&
+              Array.isArray(question.steps) && question.steps.length > 0;
+          });
+      }
+
       function setView(newView) {
+        if (newView !== 'curriculum' && !hasRenderableQuestions()) {
+          const safeModuleId = CURRICULUM_MODULES.some(function (module) { return module.id === state.activeModuleId; })
+            ? state.activeModuleId
+            : CURRICULUM_MODULES[0].id;
+          launchModuleWorkbook(safeModuleId, newView);
+          return;
+        }
         state.view = newView;
         const isCurr = newView === 'curriculum';
 

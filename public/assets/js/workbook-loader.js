@@ -4,7 +4,6 @@
   if (!match && !isArithmetic) return;
 
   const year = match ? Number(match[1]) : null;
-  let initializationComplete = false;
   let loadErrorDisplayed = false;
   const loadScript = function (source) {
     return new Promise(function (resolve, reject) {
@@ -72,7 +71,6 @@
   }
 
   function reportInitializationError() {
-    if (initializationComplete) return;
     showLoadError();
   }
 
@@ -80,9 +78,7 @@
   window.addEventListener('unhandledrejection', reportInitializationError);
 
   function startInitialization() {
-    initialize().then(function () {
-      initializationComplete = true;
-    }).catch(showLoadError);
+    initialize().catch(showLoadError);
   }
 
   if (isArithmetic) {
@@ -125,7 +121,7 @@
     const message = document.createElement('p');
     message.className = 'workbook-load-error';
     message.setAttribute('role', 'alert');
-    message.textContent = 'This workbook did not start correctly. Refresh the page; if the problem continues, contact your administrator.';
+    message.textContent = 'This workbook encountered a problem and could not display its questions. Refresh the page; if it continues, contact your administrator.';
     const container = document.querySelector('.app-container');
     if (container) container.prepend(message);
   }
