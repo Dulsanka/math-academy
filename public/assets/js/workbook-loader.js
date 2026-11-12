@@ -4,6 +4,8 @@
   if (!match && !isArithmetic) return;
 
   const year = match ? Number(match[1]) : null;
+  let initializationComplete = false;
+  let loadErrorDisplayed = false;
   const loadScript = function (source) {
     return new Promise(function (resolve, reject) {
       const script = document.createElement('script');
@@ -57,12 +59,35 @@
       : year >= 12
         ? ['/assets/js/year' + year + '-curriculum.js', '/assets/js/senior-workbook.js']
         : ['/assets/js/year' + year + '-workbook.js'];
-    for (const source of scripts) await loadScript(source);
+    for (const source of scripts) {
+      await loadScript(source);
+      if (year >= 12 && source.indexOf('-curriculum.js') !== -1 &&
+          (!Array.isArray(window.MATH_CURRICULUM_MODULES) || !window.MATH_CURRICULUM_META)) {
+        throw new Error('Senior curriculum data failed to initialize.');
+      }
+    }
+    if (year >= 12 && !window.mathAcademySeniorWorkbookReady) {
+      throw new Error('Senior workbook engine failed to initialize.');
+    }
+  }
+
+  function reportInitializationError() {
+    if (initializationComplete) return;
+    showLoadError();
+  }
+
+  window.addEventListener('error', reportInitializationError);
+  window.addEventListener('unhandledrejection', reportInitializationError);
+
+  function startInitialization() {
+    initialize().then(function () {
+      initializationComplete = true;
+    }).catch(showLoadError);
   }
 
   if (isArithmetic) {
     document.body.dataset.theme = 'arithmetic';
-    initialize().catch(showLoadError);
+    startInitialization();
     return;
   }
   const title = 'Year ' + year + ' NZ Mathematics Workbook';
@@ -92,13 +117,15 @@
   document.getElementById('printout-heading').textContent =
     '📄 Year ' + year + ' NZ Mathematics — Answer Key & Printout';
 
-  initialize().catch(showLoadError);
+  startInitialization();
 
   function showLoadError() {
+    if (loadErrorDisplayed) return;
+    loadErrorDisplayed = true;
     const message = document.createElement('p');
     message.className = 'workbook-load-error';
     message.setAttribute('role', 'alert');
-    message.textContent = 'This workbook could not be loaded. Refresh the page or contact your administrator.';
+    message.textContent = 'This workbook did not start correctly. Refresh the page; if the problem continues, contact your administrator.';
     const container = document.querySelector('.app-container');
     if (container) container.prepend(message);
   }

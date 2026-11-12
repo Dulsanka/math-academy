@@ -88,7 +88,7 @@
             case 'alg_linear': if(senior3){const x=1+i%5,coef=2+i%6,slope=2*coef*x;add('Differentiation','For f(x)='+coef+'x^2+'+c+', find the gradient at x='+x+'.','Differentiate: f prime = '+2*coef+'x',slope,'Evaluate at x='+x,slope);}else{const x=3+i%6,y=2+i%5,sum=x+y,diff=x-y;add('Simultaneous equations','Solve x+y='+sum+' and x-y='+diff+'. Find x.','Add the equations to get 2x',sum+diff,'Divide by 2',x);} break;
             case 'alg_patterns': if(senior3){const coef=2+i%5,d=1+i%4,t=2+i%4,area=coef*t*t/2+d*t;add('Integration','Find area under y='+coef+'x+'+d+' from x=0 to x='+t+'.','Evaluate antiderivative at the upper bound',area,'Subtract its value at zero',area);}else{const h=2+i%6,k=3+i%8,v=h*h+k;add('Quadratic functions','For y=(x-'+h+')^2+'+k+', find the y-intercept.','Identify the vertex x-coordinate',h,'Substitute x=0: h squared + k',v);} break;
             case 'meas_units': {const x=2+i%4,coef=2+i%5,l=2+i%6,rate=2*coef*x+l;add(senior3?'Kinematics and acceleration':'Rates of change',senior3?'Velocity v(t)='+coef+'t^2+'+l+'. Find acceleration at t='+x+'.':'For f(x)='+coef+'x^2+'+l+'x, find f prime at x='+x+'.','Differentiate the function',rate,'Evaluate the derivative',rate,senior3?'m/s^2':'');break;}
-            case 'meas_area_vol': {if(senior3){const side=2+i%6,area=side*side;add('Calculus optimisation','A square has side '+side+' m. Find its area.',area,'Use the area formula',area,'m^2');}else{const coef=2+i%6,limit=2+i%5,area=coef*limit*limit/2;add('Integration and area','Find the area under y='+coef+'x from x=0 to x='+limit+'.',area,'Evaluate the integral at the upper bound',area,'square units');}break;}
+            case 'meas_area_vol': {if(senior3){const side=2+i%6,area=side*side;add('Calculus optimisation','A square has side '+side+' m. Find its area.','Use the area formula',area,'State the area',area,'m^2');}else{const coef=2+i%6,limit=2+i%5,area=coef*limit*limit/2;add('Integration and area','Find the area under y='+coef+'x from x=0 to x='+limit+'.','Set up and evaluate the definite integral',area,'State the area',area,'square units');}break;}
             case 'meas_time': if(senior3){const coef=2+i%5,t=2+i%4,d=coef*t*t/2;add('Area under a curve','Velocity is v(t)='+coef+'t. Find distance from t=0 to t='+t+'.','Integrate velocity and evaluate at t='+t,d,'Subtract value at t=0',d,'m');}else{const a=2+i%5,t=2+i%5,b=2*a*t;add('Calculus optimisation','h(t)=-'+a+'t^2+'+b+'t. At what time is its maximum?','Use t=-b/(2a); calculate 2a',2*a,'Calculate the turning point time',t,'s');} break;
             case 'geom_shapes': if(senior3){add('Trigonometric equations','Solve sin(theta)=0.5 for 0 <= theta <= 90 degrees.','Recall the exact angle',30,'State the solution in degrees',30,'degrees');}else{const x=3+i%5,y=4+i%4,ar=x*y/2;add('Trigonometry and triangle area','A triangle has sides '+x+' cm and '+y+' cm with included angle 90 degrees. Find its area.','Use area = 1/2 ab sin(C)',ar,'Evaluate one half times '+x+' times '+y,ar,'cm^2');} break;
             case 'geom_trans': if(senior3){const ax=2+i%5,ay=1+i%4,bx=1+i%3,by=2+i%5,dot=ax*bx+ay*by;add('Vectors','Find the dot product of ('+ax+','+ay+') and ('+bx+','+by+').','Multiply matching components and add',dot,'State the dot product',dot);}else{const k=1+i%4;add('Vectors','Find the magnitude of vector ('+3*k+','+4*k+').','Square and add the components',25*k*k,'Take the square root',5*k);} break;
@@ -109,7 +109,11 @@
         for (let i = 0; i < 25; i++) {
           const mod = CURRICULUM_MODULES[i % CURRICULUM_MODULES.length];
           const modQs = generateQuestionsForModule(mod.id, (seedOffset || 0) + i);
+          if (!modQs.length) throw new Error('No questions are available for ' + mod.title + '.');
           const picked = modQs[i % modQs.length];
+          if (!picked || typeof picked.prompt !== 'string' || !picked.prompt.trim()) {
+            throw new Error('A question could not be generated for ' + mod.title + '.');
+          }
           picked.topic = mod.strandName + ' • ' + picked.topic;
           list.push(picked);
         }
@@ -154,8 +158,19 @@
       function restoreProgress() {
         try {
           const saved = JSON.parse(localStorage.getItem(PROGRESS_STORAGE_KEY) || 'null');
-          if (!saved || !Array.isArray(saved.questions) || !saved.questions.length) return false;
-          if (saved.questions.some(function (question) { return !question || typeof question !== 'object' || !Array.isArray(question.steps); })) return false;
+          if (!saved || !Array.isArray(saved.questions) || !saved.questions.length || saved.questions.length > 25) return false;
+          if (saved.questions.some(function (question) {
+            return !question || typeof question !== 'object' ||
+              typeof question.prompt !== 'string' || !question.prompt.trim() ||
+              typeof question.topic !== 'string' || !question.topic.trim() ||
+              typeof question.finalAnswer !== 'string' || !question.finalAnswer.trim() ||
+              !Array.isArray(question.steps) || question.steps.length === 0 ||
+              question.steps.some(function (step) {
+                return !step || typeof step !== 'object' ||
+                  typeof step.label !== 'string' || !step.label.trim() ||
+                  (typeof step.expected !== 'string' && typeof step.expected !== 'number');
+              });
+          })) return false;
           saved.questions.forEach(function (question) {
             question.topic = String(question.topic || '').slice(0, 300);
             question.prompt = String(question.prompt || '').slice(0, 2000);
@@ -179,6 +194,13 @@
       window.addEventListener('pagehide', saveProgress);
 
       function wrapRawQuestionsIntoState(rawList) {
+        if (!Array.isArray(rawList) || !rawList.length || rawList.some(function (question) {
+          return !question || typeof question.prompt !== 'string' || !question.prompt.trim() ||
+            typeof question.topic !== 'string' || !question.topic.trim() ||
+            !Array.isArray(question.steps) || !question.steps.length;
+        })) {
+          throw new Error('Questions could not be generated. Please refresh the workbook and try again.');
+        }
         return rawList.map(function (rq, idx) {
           return {
             index: idx,
@@ -1215,4 +1237,5 @@
       } else {
         launchModuleWorkbook('num_types', 'curriculum');
       }
+      window.mathAcademySeniorWorkbookReady = true;
     })();
