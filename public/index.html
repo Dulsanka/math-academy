@@ -9,10 +9,13 @@
 </head>
 <body>
   <section id="auth-gate" class="auth-gate" aria-labelledby="auth-title">
+    <div class="welcome-hero">
+      <div class="welcome-copy"><div class="welcome-brand">NZ∑</div><p class="welcome-eyebrow">NEW ZEALAND MATHEMATICS • YEARS 6–13</p><h1>Build confidence, one problem at a time.</h1><p>Explore interactive maths workbooks aligned with learning in Aotearoa New Zealand. Practise with guided steps, helpful hints and instant feedback.</p><div class="welcome-highlights"><span>9 curriculum workbooks</span><span>Guided questions</span><span>Learn at your own pace</span></div></div>
+      <div class="auth-card-wrap">
     <form id="login-form" class="auth-card" method="post">
       <div class="auth-mark">NZ∑</div>
-      <h1 id="auth-title">Sign in to Mathematics Academy</h1>
-      <p>Your account determines which workbooks you can open.</p>
+      <h2 id="auth-title">Welcome back</h2>
+      <p>Sign in to open the workbooks assigned to your account.</p>
       <label for="login-username">Username</label>
       <input id="login-username" name="username" type="text" autocomplete="username" required maxlength="32" />
       <label for="login-password">Password</label>
@@ -20,6 +23,9 @@
       <button type="submit" class="auth-submit">Sign in</button>
       <div id="login-status" class="auth-status" role="status" aria-live="polite"></div>
     </form>
+      <p class="auth-links"><a href="/register.html">Create a learner account</a><a href="/forgot-password.html">Forgot your password?</a></p>
+      </div>
+    </div>
   </section>
 
   <!-- PERSISTENT TOP MASTER NAVIGATION DOCK -->
@@ -73,6 +79,7 @@
         🧮 Calculator &amp; Formulas
       </button>
       <a id="btn-admin-users" class="dock-tool-btn hidden" href="/admin.html">Manage Users</a>
+      <a id="btn-my-account" class="dock-tool-btn" href="/account.html">My account</a>
       <button type="button" id="btn-sign-out" class="dock-tool-btn">Sign out</button>
       <button type="button" id="btn-read-aloud" class="dock-tool-btn" title="Read Active Question Aloud">
         🔊 Read Aloud

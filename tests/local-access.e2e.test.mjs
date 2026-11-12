@@ -86,6 +86,10 @@ test('end-to-end access, entitlements, administrator actions, and session lifecy
   assert.equal(root.status, 200);
   assert.match(root.headers.get('content-security-policy') || '', /default-src 'self'/);
   assert.match(await root.text(), /id="login-form"/);
+  assert.equal((await request('/register.html')).status, 200);
+  assert.equal((await request('/forgot-password.html')).status, 200);
+  assert.equal((await request('/account.html')).status, 401);
+  assert.equal((await request('/account.js')).status, 401);
 
   for (const page of ['/1_interactive_math_workbook.html', '/6_year6_nz_mathematics_workbook.html', '/8_year12_nz_mathematics_workbook.html', '/9_year13_nz_mathematics_workbook.html']) {
     const response = await request(page);
@@ -114,16 +118,31 @@ test('end-to-end access, entitlements, administrator actions, and session lifecy
   const invalidOrigin = await fetch(baseUrl + '/api/auth/logout', { method: 'POST', headers: { Origin: 'https://attacker.example' } });
   assert.equal(invalidOrigin.status, 403);
 
+  const registration = await request('/api/auth/register', { method: 'POST', body: {
+    firstName: 'Pending', surname: 'Applicant', email: 'pending@example.test', dateOfBirth: '1995-05-10', address: '1 Test Street',
+    schoolYear: 'Adult / other', username: 'pending-user', password: 'Pending-user-passphrase-4872', requestedEntitlements: ['year6'], privacyAcknowledged: true
+  } });
+  assert.equal(registration.status, 503, 'email settings must be configured before claiming registration succeeded');
+  assert.equal((await signIn('pending-user', 'Pending-user-passphrase-4872')).response.status, 401, 'failed email registration leaves no account behind');
+  assert.equal((await request('/api/auth/forgot-password', { method: 'POST', body: { email: 'unknown@example.test' } })).status, 200);
+
   const tooShort = await request('/api/admin/users', { method: 'POST', cookie: adminLogin.cookie, body: { username: 'learner', password: 'short', entitlements: ['year12'] } });
   assert.equal(tooShort.status, 400);
   const createdResponse = await request('/api/admin/users', { method: 'POST', cookie: adminLogin.cookie, body: { username: 'learner', password: 'Learner-passphrase-4938', entitlements: ['year12'] } });
   assert.equal(createdResponse.status, 201);
   const learner = (await createdResponse.json()).user;
   assert.deepEqual(learner.entitlements, ['year12']);
+  assert.equal((await request('/api/admin/users/' + learner.id, { method: 'PATCH', cookie: adminLogin.cookie, body: { email: 'learner@example.test' } })).status, 200);
   assert.equal((await request('/api/admin/users', { method: 'POST', cookie: adminLogin.cookie, body: { username: 'LEARNER', password: 'Another-passphrase-3920', entitlements: [] } })).status, 409);
 
   const learnerLogin = await signIn('learner', 'Learner-passphrase-4938');
   assert.equal(learnerLogin.response.status, 200);
+  const profileUpdate = await request('/api/account', { method: 'PATCH', cookie: learnerLogin.cookie, body: {
+    firstName: 'Learner', surname: 'Example', email: 'learner@example.test', dateOfBirth: '1995-04-20', address: '10 Academy Road',
+    schoolYear: 'Year 12', parentName: '', parentEmail: ''
+  } });
+  assert.equal(profileUpdate.status, 200);
+  assert.equal((await (await request('/api/account', { cookie: learnerLogin.cookie })).json()).profile.address, '10 Academy Road');
   const learnerPage = await request('/8_year12_nz_mathematics_workbook.html', { cookie: learnerLogin.cookie });
   assert.equal(learnerPage.status, 200);
   assert.match(await learnerPage.text(), /workbook-loader\.js/);
@@ -144,6 +163,12 @@ test('end-to-end access, entitlements, administrator actions, and session lifecy
   assert.equal((await signIn('learner', 'Learner-passphrase-4938')).response.status, 401);
   const resetLogin = await signIn('learner', 'New-learner-passphrase-7402');
   assert.equal(resetLogin.response.status, 200);
+  const passwordChange = await request('/api/account/password', { method: 'POST', cookie: resetLogin.cookie, body: { currentPassword: 'New-learner-passphrase-7402', newPassword: 'Self-changed-passphrase-7035' } });
+  assert.equal(passwordChange.status, 200);
+  assert.equal((await request('/api/auth/me', { cookie: resetLogin.cookie })).status, 200, 'current user session remains active after password change');
+  assert.equal((await signIn('learner', 'New-learner-passphrase-7402')).response.status, 401);
+  const selfResetLogin = await signIn('learner', 'Self-changed-passphrase-7035');
+  assert.equal(selfResetLogin.response.status, 200);
 
   const admins = await (await request('/api/admin/users', { cookie: adminLogin.cookie })).json();
   const admin = admins.users.find(user => user.role === 'admin');
@@ -151,8 +176,8 @@ test('end-to-end access, entitlements, administrator actions, and session lifecy
   const lastAdmin = await request('/api/admin/users/' + admin.id, { method: 'PATCH', cookie: adminLogin.cookie, body: { active: false } });
   assert.equal(lastAdmin.status, 400);
 
-  const logout = await request('/api/auth/logout', { method: 'POST', cookie: resetLogin.cookie });
+  const logout = await request('/api/auth/logout', { method: 'POST', cookie: selfResetLogin.cookie });
   assert.equal(logout.status, 200);
-  assert.equal((await (await request('/api/auth/me', { cookie: resetLogin.cookie })).json()).authenticated, false);
+  assert.equal((await (await request('/api/auth/me', { cookie: selfResetLogin.cookie })).json()).authenticated, false);
 });
 

@@ -30,6 +30,16 @@ button.secondary { border: 1px solid #cbd5e1; background: white; color: #334155;
 .active-toggle { display: flex; align-items: center; gap: 8px; font-size: .85rem; }
 .reset-row { display: flex; align-items: end; gap: 8px; margin-top: 12px; }
 .reset-row label { flex: 1; }
+.email-row { display: flex; align-items: end; gap: 8px; margin: 10px 0; }
+.email-row label { flex: 1; }
+input[type=email], textarea, select { width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; font: inherit; }
 .status { min-height: 1.4em; color: #b91c1c; font-weight: 650; }
 .status.success { color: #047857; }
-@media (max-width: 650px) { .admin-header, .section-head { align-items: flex-start; flex-direction: column; }.create-form { grid-template-columns: 1fr; }.reset-row { align-items: stretch; flex-direction: column; } }
+.pending-panel { border-color: #bfdbfe; background: linear-gradient(145deg,#fff,#f8fbff); }
+.count-badge { display: inline-grid; min-width: 28px; height: 28px; place-items: center; margin-left: 5px; padding: 0 8px; border-radius: 999px; background: #dbeafe; color: #1d4ed8; font-size: .82rem; vertical-align: 2px; }
+.pending-card { border-color: #bfdbfe; }
+.pending-card h3 { margin: 0 0 10px; color: #172554; }
+.profile-detail { margin: 4px 0; color: #475569; overflow-wrap: anywhere; }
+.profile-detail strong { color: #1e293b; }
+button.danger { background: #fff; border: 1px solid #fecaca; color: #b91c1c; }
+@media (max-width: 650px) { .admin-header, .section-head { align-items: flex-start; flex-direction: column; }.create-form { grid-template-columns: 1fr; }.reset-row, .email-row { align-items: stretch; flex-direction: column; } }

@@ -9,6 +9,8 @@ A browser-based mathematics practice suite for New Zealand learners in Years 6-1
 ```text
 public/                    Browser pages and static assets deployed by Cloudflare
   index.html               Sign-in and workbook navigation
+  register.html            Public learner registration and privacy notice
+  account.html             Signed-in user profile and password management
   admin.html               Administrator-only account management
   workbooks/               Shared curriculum page and arithmetic page
   assets/css/              Site, admin, and workbook styles
@@ -16,6 +18,7 @@ public/                    Browser pages and static assets deployed by Cloudflar
 src/                       Server-side entry points
   worker.js                Cloudflare API, sessions, entitlements, protected files
   local-server.js          Optional local Node.js access server
+  account-support.mjs      Shared registration validation and email templates
   workbooks.mjs            Shared routes, files, scripts, and entitlements map
 server.js                  Backward-compatible local start command
 migrations/                D1 database schema changes
@@ -30,6 +33,26 @@ The familiar workbook URLs remain the public routes. The Worker checks each rout
 See [ARCHITECTURE.md](ARCHITECTURE.md) for request flow and the steps for adding another curriculum year.
 
 The workbooks include guided questions with immediate feedback, curriculum topics by strand, random practice, progress indicators, stars, streaks, timers, tutor mode, notes, a drawing pad, printable answer sheets, topic guides, a calculator, and browser-local progress recovery. Progress is saved in each learner's browser and does not sync between devices.
+
+## Learner registration and email setup
+
+The public registration form collects the learner profile, username, password, school year and requested workbooks. Applicants under 18 must enter a parent or guardian name and email. Registration creates an inactive pending account; the learner cannot sign in until an administrator approves it and grants workbook access. Administrators review requests in **Manage Users → Registrations awaiting approval**. Declining a request deletes its account and profile. Approved users can edit their profile, change their password, request a password reset by email, and sign out.
+
+Transactional messages (registration receipt, approval and password reset) use Resend's email API. Resend's current Free plan includes 3,000 emails per month with a 100-per-day limit, but it requires a domain you own and verify; a `workers.dev` address is not an email sending domain. See [Resend pricing](https://resend.com/pricing) and [verified domain requirements](https://resend.com/docs/dashboard/domains/introduction).
+
+1. Create a Resend account, add a domain or subdomain you own, and publish the DNS records Resend supplies until it shows as verified.
+2. Create a Resend API key. Add `RESEND_API_KEY` as a **Worker secret** in Cloudflare. Add `RESEND_FROM_EMAIL` as a Worker variable, using an address at your verified domain, for example `NZ Mathematics Academy <accounts@yourdomain.example>`.
+3. For local testing, set the same values in the PowerShell session before starting Node:
+
+   ```powershell
+   $env:RESEND_API_KEY = 'your-resend-api-key'
+   $env:RESEND_FROM_EMAIL = 'NZ Mathematics Academy <accounts@yourdomain.example>'
+   node server.js
+   ```
+
+   Do not add these values to project files, `users.json`, or GitHub. If email is not configured or the provider rejects the message, registration returns an error and removes the unfinished pending record. After approval, if the provider is temporarily unavailable, use **Send approval email** on that account to retry. Password recovery responses intentionally do not reveal whether an email belongs to an account.
+
+Registration collects a date of birth and home address because the current workflow requests them. The privacy notice explains why the application collects this information, who receives transactional messages, and that administrators can view the profile. Review your privacy notice, data retention needs, and obligations for child applicants before inviting real learners. Resend also processes recipient addresses and message content to deliver and log these emails.
 
 ## Local use
 

@@ -1,4 +1,5 @@
 import WORKBOOKS from './workbooks.mjs';
+import { SCHOOL_YEARS, ageOnDate, sendEmail, sendToApplicantAndGuardian, notificationEmail, validateRegistration, validEmail } from './account-support.mjs';
 
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
@@ -8,7 +9,9 @@ const SESSION_COOKIE = '__Host-math_academy_session';
 
 const PUBLIC_ASSETS = new Set([
   '/', '/index.html', '/assets/css/site.css', '/assets/css/interactive-workbook.css',
-  '/assets/css/curriculum-workbook.css', '/assets/js/site.js', '/assets/favicon.svg'
+  '/assets/css/curriculum-workbook.css', '/assets/css/access.css', '/assets/js/site.js', '/assets/js/register.js',
+  '/assets/js/reset-password.js', '/assets/js/forgot-password.js', '/register.html', '/forgot-password.html',
+  '/reset-password.html', '/assets/favicon.svg'
 ]);
 
 let bootstrapPromise;
@@ -17,6 +20,7 @@ const ADMIN_ASSETS = new Map([
   ['/admin.js', '/assets/js/admin.js'],
   ['/admin.css', '/assets/css/admin.css']
 ]);
+const ACCOUNT_ASSETS = new Map([['/account.html', '/account.html'], ['/account.js', '/assets/js/account.js']]);
 
 function json(payload, status = 200, headers = {}) {
   return new Response(JSON.stringify(payload), {
@@ -61,6 +65,41 @@ function publicUser(row) {
     active: Boolean(row.active),
     entitlements
   };
+}
+
+function adminUser(row) {
+  return {
+    ...publicUser(row), approvalStatus: row.approval_status || 'approved',
+    firstName: row.first_name || '', surname: row.surname || '', email: row.email || '',
+    dateOfBirth: row.date_of_birth || '', address: row.address || '', schoolYear: row.school_year || '',
+    requestedEntitlements: parseEntitlements(row.requested_entitlements),
+    parentName: row.parent_name || '', parentEmail: row.parent_email || '', createdAt: row.created_at
+  };
+}
+
+function parseEntitlements(value) {
+  try { return JSON.parse(value || '[]'); } catch { return []; }
+}
+
+function accountProfile(row) {
+  return {
+    id: row.id, username: row.username, role: row.role,
+    firstName: row.first_name || '', surname: row.surname || '', email: row.email || '',
+    dateOfBirth: row.date_of_birth || '', address: row.address || '', schoolYear: row.school_year || '',
+    parentName: row.parent_name || '', parentEmail: row.parent_email || ''
+  };
+}
+
+function validProfile(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return 'Profile details are invalid.';
+  const age = ageOnDate(body.dateOfBirth);
+  if (['firstName', 'surname', 'address', 'schoolYear'].some((key) => typeof body[key] !== 'string' || !body[key].trim())) return 'Complete all required profile fields.';
+  if (body.firstName.trim().length > 80 || body.surname.trim().length > 80 || body.address.trim().length > 500) return 'Some profile fields are too long.';
+  if (!validEmail(body.email)) return 'Enter a valid email address.';
+  if (!SCHOOL_YEARS.includes(body.schoolYear)) return 'Choose a valid school year.';
+  if (age === null) return 'Enter a valid date of birth that is not in the future.';
+  if (age < 18 && (!body.parentName?.trim() || body.parentName.trim().length > 160 || !validEmail(body.parentEmail))) return 'A parent or guardian name and email are required for applicants under 18.';
+  return null;
 }
 
 function userEntitlements(user) {
@@ -145,11 +184,11 @@ async function getAuth(request, env) {
   if (!token || !/^[0-9a-f]{64}$/i.test(token)) return null;
   const tokenHash = await digestHex(token);
   const row = await env.DB.prepare(
-    `SELECT u.id, u.username, u.role, u.active, u.entitlements
+    `SELECT u.id, u.username, u.role, u.active, u.entitlements, u.email, u.parent_email
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ? AND s.expires_at > ? AND u.active = 1`
   ).bind(tokenHash, Date.now()).first();
-  return row ? { tokenHash, user: publicUser(row) } : null;
+  return row ? { tokenHash, email: row.email || '', parentEmail: row.parent_email || '', user: publicUser(row) } : null;
 }
 
 async function ensureBootstrapAdmin(env) {
@@ -202,6 +241,135 @@ async function consumeLoginAttempt(env, key, limit, now) {
 async function handleApi(request, env, url) {
   const { pathname } = url;
   const now = Date.now();
+
+  if (pathname === '/api/auth/register' && request.method === 'POST') {
+    let body;
+    try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
+    const invalid = validateRegistration(body, WORKBOOKS);
+    if (invalid) return json({ error: invalid }, 400);
+    if (body.privacyAcknowledged !== true) return json({ error: 'Please acknowledge the privacy notice before submitting.' }, 400);
+    const ip = (request.headers.get('CF-Connecting-IP') || 'unknown').slice(0, 80);
+    const attempt = await consumeLoginAttempt(env, `register:${ip}`, 5, now);
+    if (attempt.blocked_until > now) return json({ error: 'Too many registration attempts. Please try again later.' }, 429);
+    const username = body.username.trim();
+    const email = body.email.trim().toLowerCase();
+    const existing = await env.DB.prepare('SELECT id FROM users WHERE username_key = lower(?) OR lower(email) = ? LIMIT 1').bind(username, email).first();
+    if (existing) return json({ error: 'That username or email address is already registered.' }, 409);
+    const salt = randomHex(16);
+    const passwordHash = await derivePassword(body.password, salt);
+    const id = crypto.randomUUID();
+    const profile = {
+      firstName: body.firstName.trim(), surname: body.surname.trim(), email, dateOfBirth: body.dateOfBirth,
+      address: body.address.trim(), schoolYear: body.schoolYear, parentName: body.parentName?.trim() || '',
+      parentEmail: body.parentEmail?.trim().toLowerCase() || '', username
+    };
+    try {
+      await env.DB.prepare(
+        `INSERT INTO users (id, username, username_key, role, active, approval_status, entitlements, requested_entitlements,
+          password_salt, password_hash, created_at, first_name, surname, email, email_key, date_of_birth, address, school_year, parent_name, parent_email)
+         VALUES (?, ?, lower(?), 'student', 0, 'pending', '[]', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(id, username, username, JSON.stringify([...new Set(body.requestedEntitlements)]), salt, passwordHash, now,
+        profile.firstName, profile.surname, email, email, profile.dateOfBirth, profile.address, profile.schoolYear, profile.parentName, profile.parentEmail).run();
+    } catch (error) {
+      if (String(error.message).toLowerCase().includes('unique')) return json({ error: 'That username or email address is already registered.' }, 409);
+      throw error;
+    }
+    try {
+      const mail = notificationEmail('pending', profile);
+      await sendEmail(env, email, mail, `registration-${id}-${email}`);
+    } catch (error) {
+      await env.DB.prepare('DELETE FROM users WHERE id = ? AND approval_status = \'pending\'').bind(id).run();
+      return json({ error: error.message }, 503);
+    }
+    return json({ ok: true }, 201);
+  }
+
+  if (pathname === '/api/auth/forgot-password' && request.method === 'POST') {
+    let body;
+    try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
+    const ip = (request.headers.get('CF-Connecting-IP') || 'unknown').slice(0, 80);
+    const resetAttempt = await consumeLoginAttempt(env, `password-reset:${ip}`, 5, now);
+    if (resetAttempt.blocked_until > now) return json({ message: 'If an active account matches that email, a reset link will be sent.' });
+    if (!body || typeof body !== 'object' || !validEmail(body.email)) return json({ message: 'If an active account matches that email, a reset link will be sent.' });
+    const email = body.email.trim().toLowerCase();
+    const user = await env.DB.prepare("SELECT * FROM users WHERE lower(email) = ? AND active = 1 AND approval_status = 'approved' LIMIT 1").bind(email).first();
+    if (user) {
+      const recent = await env.DB.prepare('SELECT token_hash FROM password_resets WHERE user_id = ? AND created_at > ? LIMIT 1').bind(user.id, now - 60_000).first();
+      if (!recent) {
+        const token = randomHex(32);
+        const tokenHash = await digestHex(token);
+        await env.DB.batch([
+          env.DB.prepare('DELETE FROM password_resets WHERE user_id = ? OR expires_at <= ?').bind(user.id, now),
+          env.DB.prepare('INSERT INTO password_resets (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)').bind(tokenHash, user.id, now + 30 * 60 * 1000, now)
+        ]);
+        const resetUrl = new URL(`/reset-password.html?token=${token}`, url.origin).toString();
+        try { await sendEmail(env, email, notificationEmail('reset', user, resetUrl), `password-reset-${tokenHash}`); }
+        catch (error) { console.error('Password reset email could not be sent:', error.message); }
+      }
+    }
+    return json({ message: 'If an active account matches that email, a reset link will be sent.' });
+  }
+
+  if (pathname === '/api/auth/reset-password' && request.method === 'POST') {
+    let body;
+    try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
+    if (!body || typeof body !== 'object' || typeof body.token !== 'string' || !/^[0-9a-f]{64}$/i.test(body.token)) return json({ error: 'This reset link is invalid or expired. Request a new link.' }, 400);
+    if (!validPassword(body.password)) return json({ error: 'Password must be at least 12 characters.' }, 400);
+    const tokenHash = await digestHex(body.token);
+    const reset = await env.DB.prepare('DELETE FROM password_resets WHERE token_hash = ? AND expires_at > ? RETURNING user_id').bind(tokenHash, now).first();
+    if (!reset) return json({ error: 'This reset link is invalid or expired. Request a new link.' }, 400);
+    const salt = randomHex(16);
+    const passwordHash = await derivePassword(body.password, salt);
+    await env.DB.batch([
+      env.DB.prepare("UPDATE users SET password_salt = ?, password_hash = ? WHERE id = ? AND active = 1 AND approval_status = 'approved'").bind(salt, passwordHash, reset.user_id),
+      env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(reset.user_id),
+      env.DB.prepare('DELETE FROM password_resets WHERE user_id = ?').bind(reset.user_id)
+    ]);
+    return json({ ok: true });
+  }
+
+  const accountAuth = pathname.startsWith('/api/account') ? await getAuth(request, env) : null;
+  if (pathname === '/api/account' && request.method === 'GET') {
+    if (!accountAuth) return json({ error: 'Sign in is required.' }, 401);
+    const row = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(accountAuth.user.id).first();
+    return json({ profile: accountProfile(row) });
+  }
+
+  if (pathname === '/api/account' && request.method === 'PATCH') {
+    if (!accountAuth) return json({ error: 'Sign in is required.' }, 401);
+    let body;
+    try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
+    const invalid = validProfile(body);
+    if (invalid) return json({ error: invalid }, 400);
+    const email = body.email.trim().toLowerCase();
+    if (email !== accountAuth.email.toLowerCase() || (body.parentEmail?.trim().toLowerCase() || '') !== accountAuth.parentEmail.toLowerCase()) {
+      return json({ error: 'Email addresses cannot be changed from this page. Contact an administrator to update them.' }, 400);
+    }
+    const duplicate = await env.DB.prepare('SELECT id FROM users WHERE lower(email) = ? AND id != ? LIMIT 1').bind(email, accountAuth.user.id).first();
+    if (duplicate) return json({ error: 'That email address is already used by another account.' }, 409);
+    await env.DB.prepare('UPDATE users SET first_name=?, surname=?, email=?, date_of_birth=?, address=?, school_year=?, parent_name=?, parent_email=? WHERE id=?')
+      .bind(body.firstName.trim(), body.surname.trim(), email, body.dateOfBirth, body.address.trim(), body.schoolYear,
+        body.parentName?.trim() || '', body.parentEmail?.trim().toLowerCase() || '', accountAuth.user.id).run();
+    const row = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(accountAuth.user.id).first();
+    return json({ profile: accountProfile(row) });
+  }
+
+  if (pathname === '/api/account/password' && request.method === 'POST') {
+    if (!accountAuth) return json({ error: 'Sign in is required.' }, 401);
+    let body;
+    try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
+    if (!body || typeof body !== 'object' || typeof body.currentPassword !== 'string' || typeof body.newPassword !== 'string') return json({ error: 'Enter your current password and a new password.' }, 400);
+    if (!validPassword(body.newPassword)) return json({ error: 'New password must be at least 12 characters.' }, 400);
+    const row = await env.DB.prepare('SELECT password_salt, password_hash FROM users WHERE id = ?').bind(accountAuth.user.id).first();
+    if (!equalHex(await derivePassword(body.currentPassword, row.password_salt), row.password_hash)) return json({ error: 'Current password is incorrect.' }, 400);
+    const salt = randomHex(16);
+    const passwordHash = await derivePassword(body.newPassword, salt);
+    await env.DB.batch([
+      env.DB.prepare('UPDATE users SET password_salt=?, password_hash=? WHERE id=?').bind(salt, passwordHash, accountAuth.user.id),
+      env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(accountAuth.user.id, accountAuth.tokenHash)
+    ]);
+    return json({ ok: true });
+  }
 
   if (pathname === '/api/auth/me' && request.method === 'GET') {
     const auth = await getAuth(request, env);
@@ -264,8 +432,39 @@ async function handleApi(request, env, url) {
   if (!auth || auth.user.role !== 'admin') return json({ error: 'Administrator access required.' }, 403);
 
   if (pathname === '/api/admin/users' && request.method === 'GET') {
-    const result = await env.DB.prepare('SELECT id, username, role, active, entitlements FROM users ORDER BY username_key').all();
-    return json({ users: (result.results || []).map(publicUser) });
+    const result = await env.DB.prepare('SELECT * FROM users ORDER BY CASE approval_status WHEN \'pending\' THEN 0 ELSE 1 END, username_key').all();
+    return json({ users: (result.results || []).map(adminUser) });
+  }
+
+  const approvalMatch = pathname.match(/^\/api\/admin\/registrations\/([0-9a-f-]+)\/approve$/i);
+  if (approvalMatch && request.method === 'POST') {
+    let body;
+    try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
+    if (!body || typeof body !== 'object' || !allowedEntitlementList(body.entitlements) || !body.entitlements.length) return json({ error: 'Select at least one workbook to grant.' }, 400);
+    const update = await env.DB.prepare("UPDATE users SET active=1, approval_status='approved', entitlements=? WHERE id=? AND approval_status='pending' AND role='student'")
+      .bind(JSON.stringify([...new Set(body.entitlements)]), approvalMatch[1]).run();
+    if (!update.meta.changes) return json({ error: 'This registration is no longer pending.' }, 409);
+    const row = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(approvalMatch[1]).first();
+    const profile = { ...row, firstName: row.first_name, parentEmail: row.parent_email };
+    try { await sendToApplicantAndGuardian(env, profile, notificationEmail('approved', profile, url.origin), `approval-${row.id}`); }
+    catch (error) { return json({ error: `Access was approved, but the notification could not be sent. Use Send approval email to retry. ${error.message}` }, 502); }
+    return json({ user: adminUser(row) });
+  }
+
+  const rejectMatch = pathname.match(/^\/api\/admin\/registrations\/([0-9a-f-]+)$/i);
+  if (rejectMatch && request.method === 'DELETE') {
+    const result = await env.DB.prepare("DELETE FROM users WHERE id=? AND approval_status='pending' AND role='student'").bind(rejectMatch[1]).run();
+    return result.meta.changes ? json({ ok: true }) : json({ error: 'This registration is no longer pending.' }, 409);
+  }
+
+  const approvalEmailMatch = pathname.match(/^\/api\/admin\/users\/([0-9a-f-]+)\/approval-email$/i);
+  if (approvalEmailMatch && request.method === 'POST') {
+    const row = await env.DB.prepare("SELECT * FROM users WHERE id=? AND approval_status='approved' AND active=1").bind(approvalEmailMatch[1]).first();
+    if (!row) return json({ error: 'Approved account not found.' }, 404);
+    const profile = { ...row, firstName: row.first_name, parentEmail: row.parent_email };
+    try { await sendToApplicantAndGuardian(env, profile, notificationEmail('approved', profile, url.origin), `approval-retry-${row.id}-${now}`); }
+    catch (error) { return json({ error: error.message }, 502); }
+    return json({ ok: true });
   }
 
   if (pathname === '/api/admin/users' && request.method === 'POST') {
@@ -286,7 +485,7 @@ async function handleApi(request, env, url) {
          VALUES (?, ?, lower(?), 'student', 1, ?, ?, ?, ?)`
       ).bind(id, username, username, JSON.stringify([...new Set(entitlements)]), salt, passwordHash, now).run();
     } catch (error) {
-      if (String(error.message).toLowerCase().includes('unique')) return json({ error: 'That username already exists.' }, 409);
+      if (String(error.message).toLowerCase().includes('unique')) return json({ error: 'That username or email address is already in use.' }, 409);
       throw error;
     }
     const created = await env.DB.prepare('SELECT id, username, role, active, entitlements FROM users WHERE id = ?').bind(id).first();
@@ -320,6 +519,7 @@ async function handleApi(request, env, url) {
     let username = target.username;
     let entitlements;
     let active = Boolean(target.active);
+    let email = target.email || '';
     if (body.username !== undefined) {
       username = String(body.username).trim();
       if (!validUsername(username)) return json({ error: 'Username must be 3-32 valid characters.' }, 400);
@@ -332,17 +532,23 @@ async function handleApi(request, env, url) {
       if (typeof body.active !== 'boolean') return json({ error: 'Active must be true or false.' }, 400);
       active = body.active;
     }
+    if (body.email !== undefined) {
+      if (!validEmail(body.email)) return json({ error: 'Enter a valid email address.' }, 400);
+      email = body.email.trim().toLowerCase();
+      const emailTaken = await env.DB.prepare('SELECT id FROM users WHERE lower(email)=? AND id != ? LIMIT 1').bind(email, target.id).first();
+      if (emailTaken) return json({ error: 'That email address is already used by another account.' }, 409);
+    }
     try {
       const update = await env.DB.prepare(
-        `UPDATE users SET username = ?, username_key = lower(?), entitlements = ?, active = ?
+        `UPDATE users SET username = ?, username_key = lower(?), entitlements = ?, active = ?, email = ?, email_key = lower(?)
           WHERE id = ? AND (? = 1 OR role != 'admin' OR active = 0 OR
             (SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = 1) > 1)`
-      ).bind(username, username, JSON.stringify(entitlements), active ? 1 : 0, target.id, active ? 1 : 0).run();
+      ).bind(username, username, JSON.stringify(entitlements), active ? 1 : 0, email, email, target.id, active ? 1 : 0).run();
       if (!active && target.role === 'admin' && !update.meta.changes) {
         return json({ error: 'Keep at least one active administrator.' }, 400);
       }
     } catch (error) {
-      if (String(error.message).toLowerCase().includes('unique')) return json({ error: 'That username already exists.' }, 409);
+      if (String(error.message).toLowerCase().includes('unique')) return json({ error: 'That username or email address is already in use.' }, 409);
       throw error;
     }
     if (!active) await env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(target.id).run();
@@ -373,7 +579,7 @@ async function handleRequest(request, env) {
   const path = url.pathname;
 
   if (path.startsWith('/api/')) {
-    if (!['GET', 'POST', 'PATCH'].includes(request.method)) return json({ error: 'Method not allowed.' }, 405, { Allow: 'GET, POST, PATCH' });
+    if (!['GET', 'POST', 'PATCH', 'DELETE'].includes(request.method)) return json({ error: 'Method not allowed.' }, 405, { Allow: 'GET, POST, PATCH, DELETE' });
     if (request.method !== 'GET' && request.headers.get('Origin') !== url.origin) return json({ error: 'Request origin is not allowed.' }, 403);
     try {
       await ensureBootstrapAdmin(env);
@@ -395,6 +601,11 @@ async function handleRequest(request, env) {
   if (ADMIN_ASSETS.has(path)) {
     if (!auth || auth.user.role !== 'admin') return secure(text(auth ? 'Administrator access required.' : 'Please sign in as an administrator.', auth ? 403 : 401));
     return serveAsset(request, env, 'private, no-store', ADMIN_ASSETS.get(path));
+  }
+
+  if (ACCOUNT_ASSETS.has(path)) {
+    if (!auth) return secure(text('Sign in is required.', 401));
+    return serveAsset(request, env, 'private, no-store', ACCOUNT_ASSETS.get(path));
   }
 
   const matchingWorkbooks = workbooksForPath(path);

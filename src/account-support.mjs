@@ -1,0 +1,78 @@
+export const SCHOOL_YEARS = ['Year 6', 'Year 7', 'Year 8', 'Year 9', 'Year 10', 'Year 11', 'Year 12', 'Year 13', 'Adult / other'];
+
+export function validEmail(value) {
+  return typeof value === 'string' && value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
+
+export function ageOnDate(isoDate, today = new Date()) {
+  if (typeof isoDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return null;
+  const [year, month, day] = isoDate.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+  const now = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
+  if (date > now) return null;
+  let age = now.getUTCFullYear() - year;
+  if (now.getUTCMonth() < month - 1 || (now.getUTCMonth() === month - 1 && now.getUTCDate() < day)) age -= 1;
+  return age;
+}
+
+export function validateRegistration(body, workbooks) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return 'Please complete the registration form.';
+  const required = ['firstName', 'surname', 'address', 'schoolYear', 'username'];
+  if (required.some((key) => typeof body[key] !== 'string' || !body[key].trim())) return 'Complete all required fields.';
+  if (body.firstName.trim().length > 80 || body.surname.trim().length > 80 || body.address.trim().length > 500) return 'Some profile fields are too long.';
+  if (!validEmail(body.email)) return 'Enter a valid email address.';
+  if (!SCHOOL_YEARS.includes(body.schoolYear)) return 'Choose a valid school year.';
+  if (!/^[a-zA-Z0-9._-]{3,32}$/.test(body.username.trim())) return 'Username must be 3-32 characters using letters, numbers, dots, underscores or hyphens.';
+  if (typeof body.password !== 'string' || body.password.length < 12 || body.password.length > 256) return 'Choose a password with at least 12 characters.';
+  if (!Array.isArray(body.requestedEntitlements) || !body.requestedEntitlements.length || !body.requestedEntitlements.every((entry) => Object.hasOwn(workbooks, entry))) return 'Choose at least one workbook access preference.';
+  const age = ageOnDate(body.dateOfBirth);
+  if (age === null) return 'Enter a valid date of birth that is not in the future.';
+  if (age < 18 && (!body.parentName?.trim() || body.parentName.trim().length > 160 || !validEmail(body.parentEmail))) return 'A parent or guardian name and email are required for applicants under 18.';
+  if (age >= 18 && (body.parentName || body.parentEmail)) return 'Parent or guardian details should only be entered for applicants under 18.';
+  return null;
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+}
+
+export function notificationEmail(kind, profile, detail = '') {
+  const name = escapeHtml(profile.firstName || profile.first_name || profile.username || 'learner');
+  let subject;
+  let message;
+  if (kind === 'pending') {
+    subject = 'Math Academy registration received';
+    message = `<p>Hi ${name},</p><p>We received your NZ Mathematics Academy registration. Your requested workbook access is pending administrator review. We will email you again when a decision has been made.</p><p>If you are under 18, your parent or guardian will also receive an email when access is approved.</p>`;
+  } else if (kind === 'approved') {
+    subject = 'Your Math Academy access has been approved';
+    message = `<p>Congratulations, ${name}! Your NZ Mathematics Academy account has been approved.</p><p>You can now sign in at <a href="${escapeHtml(detail)}">Math Academy</a> with the username you registered.</p>`;
+  } else if (kind === 'reset') {
+    subject = 'Reset your Math Academy password';
+    message = `<p>Hello ${name},</p><p>Use the link below to choose a new password. The link expires in 30 minutes and can only be used once.</p><p><a href="${escapeHtml(detail)}">Reset password</a></p><p>If you did not request this, ignore this email.</p>`;
+  } else {
+    throw new Error('Unknown email template.');
+  }
+  return { subject, html: `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#172554;line-height:1.6"><main style="max-width:600px;margin:auto;padding:28px"><h1 style="color:#2563eb">NZ Mathematics Academy</h1>${message}<p>— NZ Mathematics Academy</p></main></body></html>`, text: `${subject}\n\n${kind === 'approved' ? `Congratulations, ${profile.firstName || profile.first_name || ''}! Your access is approved. Sign in: ${detail}` : kind === 'reset' ? `Use this link to reset your password (expires in 30 minutes): ${detail}` : `We received your registration. Your workbook access is pending administrator review.`}` };
+}
+
+export async function sendEmail(env, to, email, idempotencyKey) {
+  const apiKey = env.RESEND_API_KEY;
+  const from = env.RESEND_FROM_EMAIL;
+  if (!apiKey || !from) throw new Error('Email delivery is not configured.');
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
+    body: JSON.stringify({ from, to: [to], subject: email.subject, html: email.html, text: email.text })
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    console.error('Transactional email delivery failed:', response.status, detail.slice(0, 300));
+    throw new Error('Email delivery failed. Please try again later.');
+  }
+}
+
+export async function sendToApplicantAndGuardian(env, profile, email, idempotencyPrefix) {
+  const recipients = [...new Set([profile.email, profile.parentEmail || profile.parent_email].filter(Boolean).map((value) => value.trim().toLowerCase()))];
+  await Promise.all(recipients.map((recipient) => sendEmail(env, recipient, email, `${idempotencyPrefix}-${recipient}`)));
+}
