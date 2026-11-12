@@ -662,7 +662,7 @@
         timerHandle: null
       };
 
-      const PROGRESS_STORAGE_KEY = 'mathAcademyProgress:3_year9_nz_mathematics_workbook';
+      const PROGRESS_STORAGE_KEY = window.mathAcademyProgressKey('year9');
       let progressSaveTimeout = null;
 
       function saveProgress() {
@@ -684,6 +684,18 @@
         try {
           const saved = JSON.parse(localStorage.getItem(PROGRESS_STORAGE_KEY) || 'null');
           if (!saved || !Array.isArray(saved.questions) || !saved.questions.length) return false;
+          if (saved.questions.some(function (question) { return !question || typeof question !== 'object' || !Array.isArray(question.steps); })) return false;
+          saved.questions.forEach(function (question) {
+            question.topic = String(question.topic || '').slice(0, 300);
+            question.prompt = String(question.prompt || '').slice(0, 2000);
+            question.svgHtml = window.mathAcademySanitizeSvg(question.svgHtml || '');
+            question.steps.forEach(function (step) {
+              if (!step || typeof step !== 'object') throw new Error('Invalid saved question step.');
+              step.label = String(step.label || '').slice(0, 500);
+              step.expected = String(step.expected || '').slice(0, 200);
+              step.unit = String(step.unit || '').slice(0, 40);
+            });
+          });
           Object.keys(saved).forEach(function (key) {
             if (key in state && key !== 'timerHandle') state[key] = saved[key];
           });
@@ -952,7 +964,7 @@
 
           const shortDetail = qItem.prompt.length > 28 ? (qItem.prompt.slice(0, 26) + '…') : qItem.prompt;
           pill.innerHTML =
-            '<span class="q-pill-num">' + (qItem.isCompleted ? '✓ ' : '') + 'Q' + (i + 1) + ' • ' + qItem.topic.split('•').pop().trim() + '</span>' +
+            '<span class="q-pill-num">' + (qItem.isCompleted ? '✓ ' : '') + 'Q' + (i + 1) + ' • ' + escapeHtml(qItem.topic.split(String.fromCharCode(8226)).pop().trim()) + '</span>' +
             '<span class="q-pill-sub">' + escapeHtml(shortDetail) + '</span>';
 
           pill.addEventListener('click', (function (idx) {
@@ -1022,7 +1034,7 @@
           leftDiv.className = 'step-row-left';
           leftDiv.innerHTML =
             '<div class="step-num-circle">' + (isDone ? '✓' : (sIdx + 1)) + '</div>' +
-            '<span class="step-label-text">' + stepObj.label + '</span>';
+            '<span class="step-label-text">' + escapeHtml(stepObj.label) + '</span>';
 
           const rightDiv = document.createElement('div');
           rightDiv.className = 'step-row-right';

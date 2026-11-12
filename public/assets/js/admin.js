@@ -80,6 +80,7 @@
 
       const reset = document.createElement('form');
       reset.className = 'reset-row';
+      reset.method = 'post';
       reset.innerHTML = '<label>Set new password<input type="password" minlength="12" autocomplete="new-password" required /></label><button type="submit" class="secondary">Reset password</button>';
       reset.addEventListener('submit', async function (event) {
         event.preventDefault();

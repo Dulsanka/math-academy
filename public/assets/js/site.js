@@ -244,6 +244,45 @@
 
       let calcExpr = '';
 
+      function evaluateArithmetic(expression) {
+        const source = String(expression || '').replace(/\s+/g, '');
+        const tokens = source.match(/(?:\d+(?:\.\d*)?|\.\d+)|[()+\-*/]/g) || [];
+        if (tokens.join('') !== source) throw new Error('Invalid expression.');
+        let position = 0;
+        function primary() {
+          const token = tokens[position++];
+          if (token === '+' || token === '-') return token === '-' ? -primary() : primary();
+          if (token === '(') {
+            const value = sum();
+            if (tokens[position++] !== ')') throw new Error('Missing closing parenthesis.');
+            return value;
+          }
+          if (!token || !/^(?:\d+(?:\.\d*)?|\.\d+)$/.test(token)) throw new Error('Expected a number.');
+          return Number(token);
+        }
+        function product() {
+          let value = primary();
+          while (tokens[position] === '*' || tokens[position] === '/') {
+            const operator = tokens[position++];
+            const right = primary();
+            value = operator === '*' ? value * right : value / right;
+          }
+          return value;
+        }
+        function sum() {
+          let value = product();
+          while (tokens[position] === '+' || tokens[position] === '-') {
+            const operator = tokens[position++];
+            const right = product();
+            value = operator === '+' ? value + right : value - right;
+          }
+          return value;
+        }
+        const result = sum();
+        if (position !== tokens.length || !Number.isFinite(result)) throw new Error('Invalid arithmetic result.');
+        return result;
+      }
+
       btnOpenCalculator.addEventListener('click', function () {
         calculatorModal.classList.remove('hidden');
       });
@@ -277,8 +316,7 @@
             calcDisplay.value = calcExpr;
           } else if (k === '=') {
             try {
-              const sanitized = calcExpr.replace(/[^0-9+\-*/.()]/g, '');
-              const res = Function('"use strict"; return (' + (sanitized || '0') + ')')();
+              const res = evaluateArithmetic(calcExpr || '0');
               calcExpr = String(Number(Number(res).toFixed(5)));
               calcDisplay.value = calcExpr;
             } catch (e) {

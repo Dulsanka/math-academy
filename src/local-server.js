@@ -22,6 +22,7 @@ const MIME_TYPES = {
 };
 const sessions = new Map();
 const loginAttempts = new Map();
+const MAX_LOGIN_ATTEMPT_KEYS = 10_000;
 let users = [];
 let WORKBOOKS;
 
@@ -35,6 +36,7 @@ function setSecurityHeaders(res) {
   res.setHeader('Referrer-Policy', 'same-origin');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'");
 }
 
 function saveUsers() {
@@ -100,17 +102,28 @@ function clearSessionCookie(res) {
 }
 
 async function readJson(req) {
-  let body = '';
+  const contentType = String(req.headers['content-type'] || '').split(';', 1)[0].trim().toLowerCase();
+  if (contentType !== 'application/json') throw new Error('Request must use JSON.');
+  const declaredLength = Number(req.headers['content-length']);
+  if (Number.isFinite(declaredLength) && declaredLength > 16_384) throw new Error('Request is too large.');
+  const chunks = [];
+  let bytes = 0;
+  let tooLarge = false;
   for await (const chunk of req) {
-    body += chunk;
-    if (body.length > 16_384) throw new Error('Request is too large.');
+    bytes += chunk.length;
+    if (bytes > 16_384) {
+      tooLarge = true;
+      continue;
+    }
+    chunks.push(chunk);
   }
-  try { return JSON.parse(body || '{}'); }
+  if (tooLarge) throw new Error('Request is too large.');
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); }
   catch { throw new Error('Request body must be valid JSON.'); }
 }
 
 function attemptKey(req, username) {
-  return `${req.socket.remoteAddress || 'unknown'}:${String(username || '').toLowerCase()}`;
+  return `${req.socket.remoteAddress || 'unknown'}:${String(username || '').trim().toLowerCase().slice(0, 64)}`;
 }
 
 function ipAttemptKey(req) {
@@ -122,6 +135,17 @@ function currentAttemptState(key) {
   const state = loginAttempts.get(key);
   if (!state || state.windowEndsAt <= now) return { count: 0, windowEndsAt: now + 15 * 60 * 1000, blockedUntil: 0 };
   return state;
+}
+
+function pruneLoginAttempts(now = Date.now()) {
+  for (const [key, state] of loginAttempts) {
+    if (state.windowEndsAt <= now && state.blockedUntil <= now) loginAttempts.delete(key);
+  }
+  while (loginAttempts.size > MAX_LOGIN_ATTEMPT_KEYS) {
+    const oldestKey = loginAttempts.keys().next().value;
+    if (oldestKey === undefined) break;
+    loginAttempts.delete(oldestKey);
+  }
 }
 
 function failLogin(key, limit = 5) {
@@ -180,22 +204,27 @@ async function handleApi(req, res, urlPath) {
     let body;
     try { body = await readJson(req); }
     catch (error) { return sendJson(res, 400, { error: error.message }); }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res, 400, { error: 'Request body must be an object.' });
+    pruneLoginAttempts();
     const key = attemptKey(req, body.username);
     const state = currentAttemptState(key);
-    const ipState = currentAttemptState(ipAttemptKey(req));
+    const ipKey = ipAttemptKey(req);
+    const ipState = currentAttemptState(ipKey);
     if (state.blockedUntil > Date.now() || ipState.blockedUntil > Date.now()) return sendJson(res, 429, { error: 'Too many sign-in attempts. Try again in 15 minutes.' });
+    failLogin(key, 6);
+    failLogin(ipKey, 31);
     const username = String(body.username || '').toLowerCase();
     const user = users.find((item) => item.username.toLowerCase() === username && item.active);
-    const password = typeof body.password === 'string' ? body.password : '';
+    const password = typeof body.password === 'string' && body.password.length <= 256 ? body.password : '';
     let matched = false;
     if (user) matched = await passwordMatches(password, user);
     else await scrypt(password.slice(0, 256), 'math-academy-login-salt', PASSWORD_BYTES);
     if (!matched) {
-      failLogin(key);
-      failLogin(ipAttemptKey(req), 30);
+      pruneLoginAttempts();
       return sendJson(res, 401, { error: 'Username or password is incorrect.' });
     }
     loginAttempts.delete(key);
+    loginAttempts.delete(ipKey);
     const token = crypto.randomBytes(32).toString('hex');
     const expiresAt = Date.now() + SESSION_TTL_MS;
     sessions.set(token, { userId: user.id, expiresAt });
@@ -222,12 +251,14 @@ async function handleApi(req, res, urlPath) {
       let body;
       try { body = await readJson(req); }
       catch (error) { return sendJson(res, 400, { error: error.message }); }
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res, 400, { error: 'Request body must be an object.' });
       const username = String(body.username || '').trim();
       if (!validUsername(username)) return sendJson(res, 400, { error: 'Username must be 3–32 characters using letters, numbers, dots, underscores or hyphens.' });
       if (!validPassword(body.password)) return sendJson(res, 400, { error: 'Password must be at least 12 characters.' });
       if (users.some((item) => item.username.toLowerCase() === username.toLowerCase())) return sendJson(res, 409, { error: 'That username already exists.' });
       if (!isAllowedEntitlementList(body.entitlements || [])) return sendJson(res, 400, { error: 'One or more workbook entitlements are invalid.' });
       const passwordFields = await makePassword(body.password);
+      if (users.some((item) => item.username.toLowerCase() === username.toLowerCase())) return sendJson(res, 409, { error: 'That username already exists.' });
       const created = { id: crypto.randomUUID(), username, role: 'student', active: true, entitlements: [...new Set(body.entitlements || [])], ...passwordFields, createdAt: new Date().toISOString() };
       users.push(created); saveUsers();
       return sendJson(res, 201, { user: publicUser(created) });
@@ -238,6 +269,7 @@ async function handleApi(req, res, urlPath) {
       let body;
       try { body = await readJson(req); }
       catch (error) { return sendJson(res, 400, { error: error.message }); }
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res, 400, { error: 'Request body must be an object.' });
       const target = users.find((item) => item.id === match[1]);
       if (!target) return sendJson(res, 404, { error: 'User not found.' });
       if (body.username !== undefined) {
@@ -263,6 +295,7 @@ async function handleApi(req, res, urlPath) {
       let body;
       try { body = await readJson(req); }
       catch (error) { return sendJson(res, 400, { error: error.message }); }
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res, 400, { error: 'Request body must be an object.' });
       if (!validPassword(body.password)) return sendJson(res, 400, { error: 'Password must be at least 12 characters.' });
       const target = users.find((item) => item.id === passwordMatch[1]);
       if (!target) return sendJson(res, 404, { error: 'User not found.' });
@@ -307,6 +340,11 @@ async function main() {
 
     if (urlPath.startsWith('/api/')) {
       res.setHeader('Cache-Control', 'no-store');
+      if (req.method !== 'GET') {
+        const requestOrigin = req.headers.origin;
+        const targetOrigin = `http://${req.headers.host || 'localhost'}`;
+        if (!requestOrigin || requestOrigin !== targetOrigin) return sendJson(res, 403, { error: 'Request origin is not allowed.' });
+      }
       try { await handleApi(req, res, urlPath); }
       catch (error) { console.error('API error:', error); if (!res.headersSent) sendJson(res, 500, { error: 'The request could not be completed.' }); }
       return;
@@ -337,7 +375,8 @@ async function main() {
     res.end('Not found');
   });
 
-  server.listen(PORT, '0.0.0.0', () => console.log(`Math Academy access server listening on port ${PORT}`));
+  const HOST = process.env.HOST || '127.0.0.1';
+  server.listen(PORT, HOST, () => console.log(`Math Academy access server listening on http://${HOST}:${PORT}`));
 }
 
 main().catch((error) => { console.error(error.message); process.exit(1); });

@@ -223,7 +223,7 @@
         notesTab: 'text'         // 'text' | 'draw'
       };
 
-      const PROGRESS_STORAGE_KEY = 'mathAcademyProgress:interactive';
+      const PROGRESS_STORAGE_KEY = window.mathAcademyProgressKey('interactive');
       let progressSaveTimeout = null;
 
       function saveProgress() {
@@ -244,7 +244,19 @@
       function restoreProgress() {
         try {
           const saved = JSON.parse(localStorage.getItem(PROGRESS_STORAGE_KEY) || 'null');
-          if (!saved || !Array.isArray(saved.questions) || !saved.questions.length) return false;
+          if (!saved || !Array.isArray(saved.questions) || !saved.questions.length || saved.questions.length > 25) return false;
+          if (saved.questions.some(function (question) {
+            return !question || typeof question !== 'object' || !['add', 'sub', 'mul', 'div'].includes(question.op) ||
+              !question.plan || typeof question.plan !== 'object' || typeof question.plan.rawNumA !== 'string' ||
+              typeof question.plan.rawNumB !== 'string' || typeof question.plan.formattedAnswer !== 'string';
+          })) return false;
+          saved.questions.forEach(function (question) {
+            question.rawDividend = String(question.rawDividend || '').slice(0, 64);
+            question.rawDivisor = String(question.rawDivisor || '').slice(0, 64);
+            question.plan.rawNumA = question.plan.rawNumA.slice(0, 64);
+            question.plan.rawNumB = question.plan.rawNumB.slice(0, 64);
+            question.plan.formattedAnswer = question.plan.formattedAnswer.slice(0, 128);
+          });
           Object.keys(saved).forEach(function (key) {
             if (key in state && key !== 'timerHandle') state[key] = saved[key];
           });
@@ -1186,7 +1198,7 @@
           const sym = getOpSymbol(q.op);
           btn.innerHTML =
             '<span class="q-pill-num">' + statusIcon + 'Q' + (i + 1) + '</span>' +
-            '<span class="q-pill-sub">' + q.rawDividend + ' ' + sym + ' ' + q.rawDivisor + '</span>';
+            '<span class="q-pill-sub">' + escapeHtml(q.rawDividend) + ' ' + sym + ' ' + escapeHtml(q.rawDivisor) + '</span>';
 
           btn.addEventListener('click', (function (idx) {
             return function () {
@@ -1235,8 +1247,8 @@
                 '<option value="div"' + (q.op === 'div' ? ' selected' : '') + '>÷ Division</option>' +
               '</select>' +
             '</td>' +
-            '<td><input type="text" class="tutor-input tutor-dvd-input" data-qidx="' + i + '" value="' + q.rawDividend + '" inputmode="decimal" /></td>' +
-            '<td><input type="text" class="tutor-input tutor-div-input" data-qidx="' + i + '" value="' + q.rawDivisor + '" inputmode="decimal" /></td>' +
+            '<td><input type="text" class="tutor-input tutor-dvd-input" data-qidx="' + i + '" value="' + escapeHtml(q.rawDividend) + '" inputmode="decimal" /></td>' +
+            '<td><input type="text" class="tutor-input tutor-div-input" data-qidx="' + i + '" value="' + escapeHtml(q.rawDivisor) + '" inputmode="decimal" /></td>' +
             '<td>' +
               '<select class="tutor-select tutor-ext-select" data-qidx="' + i + '"' + (q.op !== 'div' ? ' disabled' : '') + '>' +
                 '<option value="0"' + (q.extraDecimals === 0 ? ' selected' : '') + '>0 (Stop at R)</option>' +
@@ -1247,7 +1259,7 @@
                 '<option value="5"' + (q.extraDecimals === 5 ? ' selected' : '') + '>+5 Dec Places</option>' +
               '</select>' +
             '</td>' +
-            '<td style="font-weight: 700; color: #0369a1;">' + q.plan.formattedAnswer + '</td>';
+            '<td style="font-weight: 700; color: #0369a1;">' + escapeHtml(q.plan.formattedAnswer) + '</td>';
 
           tutorQuestionsTbody.appendChild(tr);
         }
@@ -1565,7 +1577,7 @@
         tdDivisor.style.width = 'auto';
         tdDivisor.style.paddingRight = '4px';
         tdDivisor.style.textAlign = 'right';
-        tdDivisor.innerHTML = '<span class="divisor-text">' + plan.divisorInt + '</span>';
+        tdDivisor.innerHTML = '<span class="divisor-text">' + escapeHtml(plan.divisorInt) + '</span>';
         trDividend.appendChild(tdDivisor);
 
         const tdBracket = document.createElement('td');
@@ -1582,7 +1594,7 @@
           }
           const td = document.createElement('td');
           td.className = 'dividend-cell';
-          td.innerHTML = '<span class="digit-static">' + plan.digits[c] + '</span>';
+          td.innerHTML = '<span class="digit-static">' + escapeHtml(plan.digits[c]) + '</span>';
           trDividend.appendChild(td);
         }
         table.appendChild(trDividend);
@@ -1692,7 +1704,7 @@
           const td = document.createElement('td');
           const ch = plan.rowADigits[c];
           if (ch && ch !== ' ') {
-            td.innerHTML = '<span class="digit-static">' + ch + '</span>';
+            td.innerHTML = '<span class="digit-static">' + escapeHtml(ch) + '</span>';
           }
           trA.appendChild(td);
         }
@@ -1716,7 +1728,7 @@
           td.className = 'subtraction-line-cell';
           const ch = plan.rowBDigits[c];
           if (ch && ch !== ' ') {
-            td.innerHTML = '<span class="digit-static">' + ch + '</span>';
+            td.innerHTML = '<span class="digit-static">' + escapeHtml(ch) + '</span>';
           }
           trB.appendChild(td);
         }
@@ -1768,7 +1780,7 @@
           const td = document.createElement('td');
           const bBadge = plan.borrowBadges[c];
           if (bBadge && q.currentStepIdx >= bBadge.appearAtStep) {
-            td.innerHTML = '<span class="regroup-badge">' + bBadge.text + '</span>';
+            td.innerHTML = '<span class="regroup-badge">' + escapeHtml(bBadge.text) + '</span>';
           }
           trBorrow.appendChild(td);
         }
@@ -1788,7 +1800,7 @@
           const ch = plan.rowADigits[c];
           if (ch && ch !== ' ') {
             const isCrossed = plan.crossedCols[c] !== undefined && q.currentStepIdx >= plan.crossedCols[c];
-            td.innerHTML = '<span class="' + (isCrossed ? 'digit-crossed' : 'digit-static') + '">' + ch + '</span>';
+            td.innerHTML = '<span class="' + (isCrossed ? 'digit-crossed' : 'digit-static') + '">' + escapeHtml(ch) + '</span>';
           }
           trA.appendChild(td);
         }
@@ -1812,7 +1824,7 @@
           td.className = 'subtraction-line-cell';
           const ch = plan.rowBDigits[c];
           if (ch && ch !== ' ') {
-            td.innerHTML = '<span class="digit-static">' + ch + '</span>';
+            td.innerHTML = '<span class="digit-static">' + escapeHtml(ch) + '</span>';
           }
           trB.appendChild(td);
         }
@@ -1858,7 +1870,7 @@
           const td = document.createElement('td');
           const ch = plan.rowADigits[c];
           if (ch && ch !== ' ') {
-            td.innerHTML = '<span class="digit-static">' + ch + '</span>';
+            td.innerHTML = '<span class="digit-static">' + escapeHtml(ch) + '</span>';
           }
           trA.appendChild(td);
         }
@@ -1876,7 +1888,7 @@
           td.className = 'subtraction-line-cell';
           const ch = plan.rowBDigits[c];
           if (ch && ch !== ' ') {
-            td.innerHTML = '<span class="digit-static">' + ch + '</span>';
+            td.innerHTML = '<span class="digit-static">' + escapeHtml(ch) + '</span>';
           }
           trB.appendChild(td);
         }
@@ -2304,8 +2316,8 @@
           const top = document.createElement('div');
           top.className = 'printout-q-top';
           top.innerHTML =
-            '<span class="printout-q-title">Q' + (i + 1) + ' (' + getOpName(q.op) + '): ' + plan.rawNumA + ' ' + sym + ' ' + plan.rawNumB + '</span>' +
-            '<span class="printout-ans-pill">Ans: ' + plan.formattedAnswer + '</span>';
+            '<span class="printout-q-title">Q' + (i + 1) + ' (' + getOpName(q.op) + '): ' + escapeHtml(plan.rawNumA) + ' ' + sym + ' ' + escapeHtml(plan.rawNumB) + '</span>' +
+            '<span class="printout-ans-pill">Ans: ' + escapeHtml(plan.formattedAnswer) + '</span>';
           card.appendChild(top);
 
           const body = document.createElement('div');
@@ -2324,7 +2336,7 @@
           meta.innerHTML =
             '<p><strong>Status:</strong> ' + statusStr + '</p>' +
             '<p><strong>Student\'s Answer:</strong> ' + escapeHtml(childAns) + '</p>' +
-            '<p><strong>Official Answer:</strong> ' + plan.formattedAnswer + '</p>' +
+            '<p><strong>Official Answer:</strong> ' + escapeHtml(plan.formattedAnswer) + '</p>' +
             '<p style="margin-top:6px;"><strong>Notes:</strong><br/>' + escapeHtml(notesStr).replace(/\n/g, '<br/>') + '</p>';
 
           body.appendChild(meta);

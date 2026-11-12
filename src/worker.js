@@ -35,6 +35,7 @@ function secure(response) {
   headers.set('Referrer-Policy', 'same-origin');
   headers.set('X-Frame-Options', 'SAMEORIGIN');
   headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  headers.set('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-src 'self'; frame-ancestors 'self'; form-action 'self'; base-uri 'self'; object-src 'none'");
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
 }
 
@@ -110,10 +111,32 @@ function cookieValue(request, name) {
 }
 
 async function readJson(request) {
-  if (!(request.headers.get('Content-Type') || '').toLowerCase().includes('application/json')) throw new Error('Request must use JSON.');
-  const body = await request.text();
-  if (body.length > 16_384) throw new Error('Request is too large.');
-  try { return JSON.parse(body || '{}'); }
+  const contentType = (request.headers.get('Content-Type') || '').split(';', 1)[0].trim().toLowerCase();
+  if (contentType !== 'application/json') throw new Error('Request must use JSON.');
+  const contentLength = Number(request.headers.get('Content-Length'));
+  if (Number.isFinite(contentLength) && contentLength > 16_384) throw new Error('Request is too large.');
+  if (!request.body) throw new Error('Request body must be valid JSON.');
+  const reader = request.body.getReader();
+  const chunks = [];
+  let byteLength = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      byteLength += value.byteLength;
+      if (byteLength > 16_384) {
+        await reader.cancel();
+        throw new Error('Request is too large.');
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const body = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.byteLength; }
+  try { return JSON.parse(new TextDecoder().decode(body) || '{}'); }
   catch { throw new Error('Request body must be valid JSON.'); }
 }
 
@@ -160,23 +183,20 @@ function allowedEntitlementList(value) {
   return Array.isArray(value) && value.every((entry) => Object.hasOwn(WORKBOOKS, entry));
 }
 
-async function attemptState(env, key, now) {
-  return await env.DB.prepare('SELECT attempt_count, window_ends_at, blocked_until FROM login_attempts WHERE attempt_key = ?')
-    .bind(key).first() || { attempt_count: 0, window_ends_at: now + LOGIN_WINDOW_MS, blocked_until: 0 };
-}
-
-async function failLogin(env, key, limit, now) {
-  const state = await attemptState(env, key, now);
-  const inWindow = state.window_ends_at > now;
-  const count = inWindow ? state.attempt_count + 1 : 1;
-  const windowEndsAt = inWindow ? state.window_ends_at : now + LOGIN_WINDOW_MS;
-  const blockedUntil = count >= limit ? now + LOGIN_WINDOW_MS : (inWindow ? state.blocked_until : 0);
-  await env.DB.prepare(
+async function consumeLoginAttempt(env, key, limit, now) {
+  return env.DB.prepare(
     `INSERT INTO login_attempts (attempt_key, attempt_count, window_ends_at, blocked_until)
-     VALUES (?, ?, ?, ?)
-     ON CONFLICT(attempt_key) DO UPDATE SET attempt_count = excluded.attempt_count,
-       window_ends_at = excluded.window_ends_at, blocked_until = excluded.blocked_until`
-  ).bind(key, count, windowEndsAt, blockedUntil).run();
+     VALUES (?, 1, ?, 0)
+     ON CONFLICT(attempt_key) DO UPDATE SET
+       attempt_count = CASE WHEN login_attempts.window_ends_at > ? THEN login_attempts.attempt_count + 1 ELSE 1 END,
+       window_ends_at = CASE WHEN login_attempts.window_ends_at > ? THEN login_attempts.window_ends_at ELSE ? END,
+       blocked_until = CASE
+         WHEN login_attempts.blocked_until > ? THEN login_attempts.blocked_until
+         WHEN (CASE WHEN login_attempts.window_ends_at > ? THEN login_attempts.attempt_count + 1 ELSE 1 END) >= ? THEN ?
+         WHEN login_attempts.window_ends_at > ? THEN login_attempts.blocked_until
+         ELSE 0 END
+     RETURNING attempt_count, window_ends_at, blocked_until`
+  ).bind(key, now + LOGIN_WINDOW_MS, now, now, now + LOGIN_WINDOW_MS, now, now, limit + 1, now + LOGIN_WINDOW_MS, now).first();
 }
 
 async function handleApi(request, env, url) {
@@ -193,24 +213,29 @@ async function handleApi(request, env, url) {
   if (pathname === '/api/auth/login' && request.method === 'POST') {
     let body;
     try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return json({ error: 'Request body must be an object.' }, 400);
     const usernameInput = String(body.username || '').trim();
     const usernameKey = usernameInput.toLowerCase().slice(0, 64);
     const address = (request.headers.get('CF-Connecting-IP') || 'unknown').slice(0, 80);
     const usernameAttemptKey = `username:${address}:${usernameKey}`;
     const ipAttemptKey = `ip:${address}`;
-    const usernameState = await attemptState(env, usernameAttemptKey, now);
-    const ipState = await attemptState(env, ipAttemptKey, now);
+    const [usernameState, ipState] = await Promise.all([
+      consumeLoginAttempt(env, usernameAttemptKey, 5, now),
+      consumeLoginAttempt(env, ipAttemptKey, 30, now)
+    ]);
     if (usernameState.blocked_until > now || ipState.blocked_until > now) {
       return json({ error: 'Too many sign-in attempts. Try again in 15 minutes.' }, 429);
     }
 
     const userRow = await env.DB.prepare('SELECT * FROM users WHERE username_key = ? AND active = 1').bind(usernameKey).first();
-    const password = typeof body.password === 'string' ? body.password.slice(0, 256) : '';
+    if (typeof body.password !== 'string' || body.password.length > 256) {
+      return json({ error: 'Username or password is incorrect.' }, 401);
+    }
+    const password = body.password;
     const salt = userRow ? userRow.password_salt : '6d6174682d61636164656d792d6c6f67696e2d73616c74';
     const actualHash = await derivePassword(password, salt);
     const matched = Boolean(userRow && equalHex(actualHash, userRow.password_hash));
     if (!matched) {
-      await Promise.all([failLogin(env, usernameAttemptKey, 5, now), failLogin(env, ipAttemptKey, 30, now)]);
       await env.DB.prepare('DELETE FROM login_attempts WHERE window_ends_at < ?').bind(now - 24 * 60 * 60 * 1000).run();
       return json({ error: 'Username or password is incorrect.' }, 401);
     }
@@ -246,6 +271,7 @@ async function handleApi(request, env, url) {
   if (pathname === '/api/admin/users' && request.method === 'POST') {
     let body;
     try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return json({ error: 'Request body must be an object.' }, 400);
     const username = String(body.username || '').trim();
     const entitlements = body.entitlements || [];
     if (!validUsername(username)) return json({ error: 'Username must be 3-32 characters using letters, numbers, dots, underscores or hyphens.' }, 400);
@@ -271,6 +297,7 @@ async function handleApi(request, env, url) {
   if (passwordMatch && request.method === 'POST') {
     let body;
     try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return json({ error: 'Request body must be an object.' }, 400);
     if (!validPassword(body.password)) return json({ error: 'Password must be at least 12 characters.' }, 400);
     const target = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(passwordMatch[1]).first();
     if (!target) return json({ error: 'User not found.' }, 404);
@@ -287,6 +314,7 @@ async function handleApi(request, env, url) {
   if (userMatch && request.method === 'PATCH') {
     let body;
     try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) return json({ error: 'Request body must be an object.' }, 400);
     const target = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(userMatch[1]).first();
     if (!target) return json({ error: 'User not found.' }, 404);
     let username = target.username;
@@ -304,13 +332,15 @@ async function handleApi(request, env, url) {
       if (typeof body.active !== 'boolean') return json({ error: 'Active must be true or false.' }, 400);
       active = body.active;
     }
-    if (!active && target.role === 'admin') {
-      const admins = await env.DB.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'admin' AND active = 1").first();
-      if (admins.count < 2) return json({ error: 'Keep at least one active administrator.' }, 400);
-    }
     try {
-      await env.DB.prepare('UPDATE users SET username = ?, username_key = lower(?), entitlements = ?, active = ? WHERE id = ?')
-        .bind(username, username, JSON.stringify(entitlements), active ? 1 : 0, target.id).run();
+      const update = await env.DB.prepare(
+        `UPDATE users SET username = ?, username_key = lower(?), entitlements = ?, active = ?
+          WHERE id = ? AND (? = 1 OR role != 'admin' OR active = 0 OR
+            (SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = 1) > 1)`
+      ).bind(username, username, JSON.stringify(entitlements), active ? 1 : 0, target.id, active ? 1 : 0).run();
+      if (!active && target.role === 'admin' && !update.meta.changes) {
+        return json({ error: 'Keep at least one active administrator.' }, 400);
+      }
     } catch (error) {
       if (String(error.message).toLowerCase().includes('unique')) return json({ error: 'That username already exists.' }, 409);
       throw error;
@@ -356,6 +386,10 @@ async function handleRequest(request, env) {
   }
 
   if (request.method !== 'GET' && request.method !== 'HEAD') return secure(text('Method not allowed.', 405, { Allow: 'GET, HEAD' }));
+  if (PUBLIC_ASSETS.has(path)) {
+    const assetPath = path === '/' ? '/index.html' : undefined;
+    return serveAsset(request, env, 'public, max-age=300', assetPath);
+  }
   const auth = await getAuth(request, env);
 
   if (ADMIN_ASSETS.has(path)) {
@@ -375,10 +409,6 @@ async function handleRequest(request, env) {
     return serveAsset(request, env, 'private, no-store', assetPath);
   }
 
-  if (PUBLIC_ASSETS.has(path)) {
-    const assetPath = path === '/' ? '/index.html' : undefined;
-    return serveAsset(request, env, 'public, max-age=300', assetPath);
-  }
   return secure(text('Not found.', 404));
 }
 

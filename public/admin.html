@@ -15,7 +15,7 @@
     <div id="admin-status" class="status" role="status" aria-live="polite"></div>
     <section class="panel">
       <h2>Create a student account</h2>
-      <form id="create-user-form" class="create-form">
+      <form id="create-user-form" class="create-form" method="post">
         <label>Username<input name="username" required minlength="3" maxlength="32" autocomplete="off" /></label>
         <label>Temporary password<input name="password" type="password" required minlength="12" autocomplete="new-password" /></label>
         <fieldset><legend>Workbook access</legend><div class="entitlement-grid" data-entitlements></div></fieldset>

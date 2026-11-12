@@ -2,7 +2,8 @@ const WORKBOOKS = Object.freeze({
   arithmetic: Object.freeze({
     page: '/1_interactive_math_workbook.html',
     file: 'workbooks/arithmetic.html',
-    script: '/assets/js/interactive-workbook.js'
+    script: '/assets/js/interactive-workbook.js',
+    loader: '/assets/js/workbook-loader.js'
   }),
   year6: Object.freeze({
     page: '/6_year6_nz_mathematics_workbook.html',
