@@ -149,6 +149,9 @@ test('end-to-end access, entitlements, administrator actions, and session lifecy
   const adminMe = await request('/api/auth/me', { cookie: adminLogin.cookie });
   assert.equal((await adminMe.json()).user.role, 'admin');
   assert.equal((await request('/admin.html', { cookie: adminLogin.cookie })).status, 200);
+  assert.equal((await request('/account.html', { cookie: adminLogin.cookie })).status, 200);
+  assert.match(await (await request('/account.html', { cookie: adminLogin.cookie })).text(), /src="\/account\.js"/);
+  assert.match(await (await request('/account.js', { cookie: adminLogin.cookie })).text(), /admin-email-panel/);
   const addedAdmin = await request('/api/admin/users', { method: 'POST', cookie: adminLogin.cookie, body: { username: 'qa_admin_two', password: 'Qa-second-admin-passphrase-4853', role: 'admin' } });
   assert.equal(addedAdmin.status, 201);
   assert.equal((await addedAdmin.json()).user.role, 'admin');
@@ -157,6 +160,8 @@ test('end-to-end access, entitlements, administrator actions, and session lifecy
   const parentLogin = await signIn(PARENT_NAME, PARENT_PASSWORD);
   assert.equal(parentLogin.response.status, 200);
   assert.equal((await request('/parent.html', { cookie: parentLogin.cookie })).status, 200);
+  assert.match(await (await request('/parent.html', { cookie: parentLogin.cookie })).text(), /src="\/parent\.js"/);
+  assert.equal((await request('/parent.js', { cookie: parentLogin.cookie })).status, 200);
   const childCreated = await request('/api/parent/children', { method: 'POST', cookie: parentLogin.cookie, body: {
     firstName: 'Test', surname: 'Child', dateOfBirth: '2015-05-10', schoolYear: 'Year 6', username: 'qa_child',
     password: 'Qa-child-passphrase-4854', requestedEntitlements: ['year6']

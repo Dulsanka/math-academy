@@ -52,6 +52,8 @@ test('static buttons have types and accessible names; local links resolve', () =
       if (pathname === '/admin.css') mapped = '/assets/css/admin.css';
       if (pathname === '/admin.js') mapped = '/assets/js/admin.js';
       if (pathname === '/admin.html') mapped = '/admin.html';
+      if (pathname === '/account.js') mapped = '/assets/js/account.js';
+      if (pathname === '/parent.js') mapped = '/assets/js/parent.js';
       if (/^\/(?:1_interactive|[2-9]_year\d+)_/.test(pathname)) continue; // Worker-mapped workbook route.
       assert.ok(fs.existsSync(path.join(PUBLIC, mapped.slice(1))), `${path.relative(PUBLIC, file)} local asset ${url} exists`);
     }
