@@ -40,27 +40,30 @@ The workbooks include guided questions with immediate feedback, curriculum topic
 
 Only a parent or guardian can register children. The parent registration form collects the adult's profile, one to five child profiles, login credentials, school years, and requested workbooks. Parent sign-in stays pending until administrator approval. Children can sign in with their own credentials once their family registration is saved, but workbook pages stay blocked until an administrator approves their requested entitlements. Administrators review the family in **Manage Users → Registrations awaiting approval**. Declining a pending parent deletes the family and its linked child profiles.
 
-The receipt email is sent after the family records are saved. If the email provider is unavailable, the registration is kept and the form explains that delivery failed; an administrator can resend the receipt from the pending registration card. Approval also saves before notification delivery. If an approval email fails, the account remains approved and the administrator can use **Send approval email** to retry. Retries use an idempotency key so a recipient who already got the message is not sent a duplicate. Configure email delivery before inviting families.
+The receipt email is sent after the family records are saved. If the email provider is unavailable, the registration is kept and the form explains that delivery failed; an administrator can resend the receipt from the pending registration card. Approval also saves before notification delivery. If an approval email fails, the account remains approved and the administrator can use **Send approval email** to retry. Gmail does not guarantee deduplication if a retry follows an ambiguous delivery failure, so a duplicate message is possible. Configure email delivery before inviting families.
 
 Parents can add and remove child profiles, reset child passwords, and enable or disable a child's sign-in. Parents can request workbook access, but only an administrator can grant workbook years. Administrators can create approved parent accounts and link legacy children from **Manage Users**. Admins can also create or remove administrators; the service prevents removal or deactivation of the last active administrator. Change the administrator recovery email in **My account → Update administrator email**, confirming with the current password.
 
 Registration addresses have a country selector and use the browser's built-in address autofill where available. Google Places suggestions are not connected. Google currently offers free monthly usage caps for some Places requests, but enabling the Places API still requires a billing-enabled Google Cloud project and API key. Avoid adding it if you do not want to attach billing details; the standard address field and browser autofill need no Google key.
 
-Transactional messages (registration receipt, approval and password reset) use Resend's email API. Resend's current Free plan includes 3,000 emails per month with a 100-per-day limit, but it requires a domain you own and verify; a `workers.dev` address is not an email sending domain. See [Resend pricing](https://resend.com/pricing) and [verified domain requirements](https://resend.com/docs/dashboard/domains/introduction).
+Transactional messages (family registration receipt, approval and password reset) use the Gmail API and the administrator's Google account. The app requests only the `gmail.send` scope. Google requires OAuth 2.0 and a refresh token for server-side sending; credentials must remain in Cloudflare Worker secrets, never in GitHub or project files. See [Gmail API sending](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/send), [OAuth for server-side apps](https://developers.google.com/identity/protocols/oauth2/web-server), and [Gmail API scopes](https://developers.google.com/workspace/gmail/api/auth/scopes).
 
-1. Create a Resend account, add a domain or subdomain you own, and publish the DNS records Resend supplies until it shows as verified.
-2. Create a Resend API key. Add `RESEND_API_KEY` as a **Worker secret** in Cloudflare. Add `RESEND_FROM_EMAIL` as a Worker variable, using an address at your verified domain, for example `NZ Mathematics Academy <accounts@yourdomain.example>`.
-3. For local testing, set the same values in the PowerShell session before starting Node:
+### Gmail API setup
 
-   ```powershell
-   $env:RESEND_API_KEY = 'your-resend-api-key'
-   $env:RESEND_FROM_EMAIL = 'NZ Mathematics Academy <accounts@yourdomain.example>'
-   node server.js
-   ```
+1. In [Google Cloud Console](https://console.cloud.google.com/), create or select a project and enable **Gmail API**.
+2. Configure the OAuth consent screen for an **External** app, add the Gmail account that will send the messages as a test user, and create an OAuth client of type **Web application**. Add this authorized redirect URI: `https://developers.google.com/oauthplayground`.
+3. Copy the OAuth **Client ID** and **Client secret**. In [OAuth 2.0 Playground](https://developers.google.com/oauthplayground/), open its settings (gear icon), enable **Use your own OAuth credentials**, and enter those values. In Step 1, request only `https://www.googleapis.com/auth/gmail.send`, authorize using the same Gmail account, and in Step 2 exchange the code for tokens. Copy the **refresh token**. The OAuth Playground revokes its default refresh tokens after 24 hours, so use your own OAuth client credentials as described here.
+4. In Cloudflare, open **Workers & Pages → math-academy → Settings → Variables and Secrets** and add these exact names:
+   - As **Secrets**: `GMAIL_CLIENT_ID`, `GMAIL_CLIENT_SECRET`, and `GMAIL_REFRESH_TOKEN`.
+   - As a **Text** variable: `GMAIL_SENDER_EMAIL`, containing the same Gmail address that authorized the OAuth request.
+   - Select **Deploy** to apply the settings. GitHub Actions secrets used for deployments are separate and are not automatically available to the running Worker.
+5. For local testing, set the same four environment variables in PowerShell before starting `node server.js`. Do not save actual credentials in source files.
 
-   Do not add these values to project files, `users.json`, or GitHub. If the provider is unavailable, family records remain pending and an administrator can resend the registration receipt. If approval notification delivery fails, use **Send approval email** on that account to retry. Password recovery responses intentionally do not reveal whether an email belongs to an account.
+With an **External** OAuth app left in **Testing**, a refresh token for the `gmail.send` scope expires after 7 days. Move the consent screen to **In production** for ongoing use; Google may require OAuth verification because `gmail.send` is a sensitive scope. If an email attempt fails, family registrations and approvals remain saved; an administrator can retry the registration receipt or approval email. A retry after an ambiguous network failure could send a duplicate.
 
-Registration collects a date of birth and home address because the current workflow requests them. The privacy notice explains why the application collects this information, who receives transactional messages, and that administrators can view the profile. Review your privacy notice, data retention needs, and obligations for child applicants before inviting real learners. Resend also processes recipient addresses and message content to deliver and log these emails.
+If Gmail authorization expires or is revoked, create a new refresh token and update the Cloudflare secret. Password recovery responses intentionally do not reveal whether an email belongs to an account.
+
+Registration collects a date of birth and home address because the current workflow requests them. The privacy notice explains why the application collects this information, who receives transactional messages, and that administrators can view the profile. Review your privacy notice, data retention needs, and obligations for child applicants before inviting real learners. Google processes the Gmail sender account and recipient addresses and message content to deliver these emails.
 
 ## Local use
 

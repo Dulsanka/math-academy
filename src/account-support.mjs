@@ -122,24 +122,80 @@ export function notificationEmail(kind, profile, detail = '') {
   return { subject, html: `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#172554;line-height:1.6"><main style="max-width:600px;margin:auto;padding:28px"><h1 style="color:#2563eb">NZ Mathematics Academy</h1>${message}<p>— NZ Mathematics Academy</p></main></body></html>`, text: `${subject}\n\n${textMessage}` };
 }
 
-export async function sendEmail(env, to, email, idempotencyKey) {
-  const apiKey = env.RESEND_API_KEY;
-  const from = env.RESEND_FROM_EMAIL;
-  if (!apiKey || !from) throw new Error('Email delivery is not configured.');
-  const response = await fetch('https://api.resend.com/emails', {
+function base64Utf8(value) {
+  const bytes = new TextEncoder().encode(value);
+  let binary = '';
+  for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+  }
+  return btoa(binary);
+}
+
+function wrapBase64(value) {
+  return value.match(/.{1,76}/g)?.join('\r\n') || '';
+}
+
+function gmailRawMessage(from, to, email) {
+  const boundary = `math-academy-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const subject = `=?UTF-8?B?${base64Utf8(email.subject)}?=`;
+  const body = [
+    `From: ${from}`,
+    `To: ${to}`,
+    `Subject: ${subject}`,
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/plain; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    wrapBase64(base64Utf8(email.text)),
+    `--${boundary}`,
+    'Content-Type: text/html; charset="UTF-8"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    wrapBase64(base64Utf8(email.html)),
+    `--${boundary}--`,
+    ''
+  ].join('\r\n');
+  return base64Utf8(body).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+export async function sendEmail(env, to, email) {
+  const clientId = env.GMAIL_CLIENT_ID;
+  const clientSecret = env.GMAIL_CLIENT_SECRET;
+  const refreshToken = env.GMAIL_REFRESH_TOKEN;
+  const from = env.GMAIL_SENDER_EMAIL;
+  if (!clientId || !clientSecret || !refreshToken || !from) throw new Error('Gmail API is not configured.');
+  if (!validEmail(to) || !validEmail(from)) throw new Error('Gmail sender or recipient email address is invalid.');
+  const recipient = to.trim();
+  const sender = from.trim();
+
+  const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
-    body: JSON.stringify({ from, to: [to], subject: email.subject, html: email.html, text: email.text })
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' })
+  });
+  if (!tokenResponse.ok) {
+    console.error('Gmail OAuth token refresh failed:', tokenResponse.status);
+    throw new Error('Gmail authorization failed. Check the Google OAuth secrets and consent status.');
+  }
+  const tokenData = await tokenResponse.json().catch(() => ({}));
+  if (typeof tokenData.access_token !== 'string' || !tokenData.access_token) throw new Error('Google did not return an access token. Re-authorize the Gmail account.');
+
+  const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${tokenData.access_token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ raw: gmailRawMessage(sender, recipient, email) })
   });
   if (!response.ok) {
-    const detail = await response.text().catch(() => '');
-    console.error('Transactional email delivery failed:', response.status, detail.slice(0, 300));
-    throw new Error('Email delivery failed. Please try again later.');
+    console.error('Gmail API email delivery failed:', response.status);
+    throw new Error('Gmail could not send the message. Check the Gmail API and sender configuration.');
   }
 }
 
-export async function sendToApplicantAndGuardian(env, profile, email, idempotencyPrefix) {
+export async function sendToApplicantAndGuardian(env, profile, email) {
   const recipients = [...new Set([profile.email, profile.parentEmail || profile.parent_email].filter(Boolean).map((value) => value.trim().toLowerCase()))];
   if (!recipients.length) throw new Error('No notification email address is available for this account.');
-  await Promise.all(recipients.map((recipient) => sendEmail(env, recipient, email, `${idempotencyPrefix}-${recipient}`)));
+  await Promise.all(recipients.map((recipient) => sendEmail(env, recipient, email)));
 }

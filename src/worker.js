@@ -87,11 +87,6 @@ function sameEntitlements(left, right) {
   return Array.isArray(left) && Array.isArray(right) && [...new Set(left)].sort().join('\0') === [...new Set(right)].sort().join('\0');
 }
 
-function approvalEmailKey(userId, entitlements) {
-  const grant = [...new Set(entitlements || [])].sort().join('-') || 'none';
-  return `approval-${userId}-${grant}`;
-}
-
 function accountProfile(row) {
   return {
     id: row.id, username: row.username, role: row.role, accountType: row.role === 'admin' ? 'admin' : (row.account_type || 'learner'),
@@ -324,7 +319,7 @@ async function handleApi(request, env, url) {
       throw error;
     }
     try {
-      await sendEmail(env, email, notificationEmail('parent-pending', { firstName: body.firstName }), `parent-registration-${id}-${email}`);
+      await sendEmail(env, email, notificationEmail('parent-pending', { firstName: body.firstName }));
       return json({ ok: true, emailSent: true }, 201);
     } catch (error) {
       console.error('Family registration receipt could not be sent:', error.message);
@@ -351,7 +346,7 @@ async function handleApi(request, env, url) {
           env.DB.prepare('INSERT INTO password_resets (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)').bind(tokenHash, user.id, now + 30 * 60 * 1000, now)
         ]);
         const resetUrl = new URL(`/reset-password.html?token=${token}`, url.origin).toString();
-        try { await sendEmail(env, email, notificationEmail('reset', user, resetUrl), `password-reset-${tokenHash}`); }
+        try { await sendEmail(env, email, notificationEmail('reset', user, resetUrl)); }
         catch (error) { console.error('Password reset email could not be sent:', error.message); }
       }
     }
@@ -655,7 +650,7 @@ async function handleApi(request, env, url) {
     if (!row) return json({ error: 'Pending parent registration not found.' }, 404);
     const email = (row.email || '').trim().toLowerCase();
     if (!email) return json({ error: 'This parent account has no email address.' }, 400);
-    try { await sendEmail(env, email, notificationEmail('parent-pending', row), `parent-registration-${row.id}-${email}`); }
+    try { await sendEmail(env, email, notificationEmail('parent-pending', row)); }
     catch (error) { return json({ error: error.message }, 502); }
     return json({ ok: true });
   }
@@ -676,7 +671,7 @@ async function handleApi(request, env, url) {
     if (!update.meta.changes) return json({ error: 'This registration is no longer pending.' }, 409);
     const row = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(approvalMatch[1]).first();
     const profile = { ...row, firstName: row.first_name, parentEmail: row.parent_email };
-    try { await sendToApplicantAndGuardian(env, profile, notificationEmail('approved', profile, url.origin), approvalEmailKey(row.id, parseEntitlements(row.entitlements))); }
+    try { await sendToApplicantAndGuardian(env, profile, notificationEmail('approved', profile, url.origin)); }
     catch (error) { return json({ error: `Access was approved, but the notification could not be confirmed. One or more recipients may already have received it. Use Send approval email to retry. ${error.message}` }, 502); }
     return json({ user: adminUser(row) });
   }
@@ -700,7 +695,7 @@ async function handleApi(request, env, url) {
     const row = await env.DB.prepare("SELECT * FROM users WHERE id=? AND approval_status='approved' AND active=1").bind(approvalEmailMatch[1]).first();
     if (!row) return json({ error: 'Approved account not found.' }, 404);
     const profile = { ...row, firstName: row.first_name, parentEmail: row.parent_email };
-    try { await sendToApplicantAndGuardian(env, profile, notificationEmail('approved', profile, url.origin), approvalEmailKey(row.id, parseEntitlements(row.entitlements))); }
+    try { await sendToApplicantAndGuardian(env, profile, notificationEmail('approved', profile, url.origin)); }
     catch (error) { return json({ error: error.message }, 502); }
     return json({ ok: true });
   }
@@ -739,7 +734,7 @@ async function handleApi(request, env, url) {
     }
     const created = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first();
     if (role === 'parent') {
-      try { await sendEmail(env, created.email, notificationEmail('approved', created, url.origin), `parent-created-${created.id}-${created.email}`); }
+      try { await sendEmail(env, created.email, notificationEmail('approved', created, url.origin)); }
       catch (error) {
         console.error('Administrator-created parent welcome email could not be sent:', error.message);
         return json({ user: publicUser(created), emailSent: false, message: 'Parent account created, but the welcome email could not be sent. Use Send approval email in the account list to retry.' }, 201);

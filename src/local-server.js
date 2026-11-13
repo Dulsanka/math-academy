@@ -99,11 +99,13 @@ function parentChild(user) {
     entitlements: [...(user.entitlements || [])], requestedEntitlements: [...(user.requestedEntitlements || [])] };
 }
 
-function localEmailEnv() { return { RESEND_API_KEY: process.env.RESEND_API_KEY, RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL }; }
-
-function approvalEmailKey(userId, entitlements) {
-  const grant = [...new Set(entitlements || [])].sort().join('-') || 'none';
-  return `approval-${userId}-${grant}`;
+function localEmailEnv() {
+  return {
+    GMAIL_CLIENT_ID: process.env.GMAIL_CLIENT_ID,
+    GMAIL_CLIENT_SECRET: process.env.GMAIL_CLIENT_SECRET,
+    GMAIL_REFRESH_TOKEN: process.env.GMAIL_REFRESH_TOKEN,
+    GMAIL_SENDER_EMAIL: process.env.GMAIL_SENDER_EMAIL
+  };
 }
 
 function getCookie(req, name) {
@@ -272,7 +274,7 @@ async function handleApi(req, res, urlPath) {
     }
     users.push(parent, ...children); saveUsers();
     try {
-      await accountSupport.sendEmail(localEmailEnv(), email, accountSupport.notificationEmail('parent-pending', parent), `parent-registration-${parent.id}-${email}`);
+      await accountSupport.sendEmail(localEmailEnv(), email, accountSupport.notificationEmail('parent-pending', parent));
       return sendJson(res, 201, { ok: true, emailSent: true });
     } catch (error) {
       console.error('Family registration receipt could not be sent:', error.message);
@@ -292,7 +294,7 @@ async function handleApi(req, res, urlPath) {
         const token = crypto.randomBytes(32).toString('hex'); user.resetTokenHash = crypto.createHash('sha256').update(token).digest('hex'); user.resetExpiresAt = Date.now() + 30 * 60 * 1000; user.resetRequestedAt = Date.now(); saveUsers();
         const baseUrl = process.env.PUBLIC_APP_URL || `http://${req.headers.host || 'localhost:3000'}`;
         const resetUrl = new URL(`/reset-password.html?token=${token}`, baseUrl).toString();
-        try { await accountSupport.sendEmail(localEmailEnv(), email, accountSupport.notificationEmail('reset', user, resetUrl), `password-reset-${user.resetTokenHash}`); }
+        try { await accountSupport.sendEmail(localEmailEnv(), email, accountSupport.notificationEmail('reset', user, resetUrl)); }
         catch (error) { console.error('Password reset email could not be sent:', error.message); }
       }
     }
@@ -516,7 +518,7 @@ async function handleApi(req, res, urlPath) {
     if (req.method === 'POST' && receiptMatch) {
       const parent = users.find((user) => user.id === receiptMatch[1] && user.role === 'student' && user.accountType === 'parent' && user.approvalStatus === 'pending');
       if (!parent) return sendJson(res, 404, { error: 'Pending parent registration not found.' });
-      try { await accountSupport.sendEmail(localEmailEnv(), parent.email, accountSupport.notificationEmail('parent-pending', parent), `parent-registration-${parent.id}-${parent.email}`); }
+      try { await accountSupport.sendEmail(localEmailEnv(), parent.email, accountSupport.notificationEmail('parent-pending', parent)); }
       catch (error) { return sendJson(res, 502, { error: error.message }); }
       return sendJson(res, 200, { ok: true });
     }
@@ -535,7 +537,7 @@ async function handleApi(req, res, urlPath) {
       if (newApproval) target.active = target.parentEnabled !== false && target.adminEnabled !== false;
       saveUsers();
       const appUrl = process.env.PUBLIC_APP_URL || `http://${req.headers.host || 'localhost:3000'}`;
-      try { await accountSupport.sendToApplicantAndGuardian(localEmailEnv(), target, accountSupport.notificationEmail('approved', target, appUrl), approvalEmailKey(target.id, target.entitlements)); }
+      try { await accountSupport.sendToApplicantAndGuardian(localEmailEnv(), target, accountSupport.notificationEmail('approved', target, appUrl)); }
       catch (error) { return sendJson(res, 502, { error: `Access was approved, but the notification could not be sent. Use Send approval email to retry. ${error.message}` }); }
       return sendJson(res, 200, { user: adminUser(target) });
     }
@@ -565,7 +567,7 @@ async function handleApi(req, res, urlPath) {
       const target = users.find((user) => user.id === approvalEmailMatch[1] && user.active && (user.approvalStatus || 'approved') === 'approved');
       if (!target) return sendJson(res, 404, { error: 'Approved account not found.' });
       const appUrl = process.env.PUBLIC_APP_URL || `http://${req.headers.host || 'localhost:3000'}`;
-      try { await accountSupport.sendToApplicantAndGuardian(localEmailEnv(), target, accountSupport.notificationEmail('approved', target, appUrl), approvalEmailKey(target.id, target.entitlements)); }
+      try { await accountSupport.sendToApplicantAndGuardian(localEmailEnv(), target, accountSupport.notificationEmail('approved', target, appUrl)); }
       catch (error) { return sendJson(res, 502, { error: error.message }); }
       return sendJson(res, 200, { ok: true });
     }
@@ -595,7 +597,7 @@ async function handleApi(req, res, urlPath) {
       users.push(created); saveUsers();
       if (role === 'parent') {
         const appUrl = process.env.PUBLIC_APP_URL || `http://${req.headers.host || 'localhost:3000'}`;
-        try { await accountSupport.sendEmail(localEmailEnv(), created.email, accountSupport.notificationEmail('approved', created, appUrl), `parent-created-${created.id}-${created.email}`); }
+        try { await accountSupport.sendEmail(localEmailEnv(), created.email, accountSupport.notificationEmail('approved', created, appUrl)); }
         catch (error) { console.error('Administrator-created parent welcome email could not be sent:', error.message); return sendJson(res, 201, { user: publicUser(created), emailSent: false, message: 'Parent account created, but the welcome email could not be sent. Use Send approval email in the account list to retry.' }); }
         return sendJson(res, 201, { user: publicUser(created), emailSent: true });
       }
