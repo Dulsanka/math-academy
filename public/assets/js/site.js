@@ -60,7 +60,7 @@
           });
           const selectedType = loginForm.elements.accountType.value;
           const actualType = payload.user && payload.user.role === 'admin' ? 'admin' : payload.user && payload.user.accountType === 'parent' ? 'parent' : 'child';
-          if (selectedType !== actualType) {
+          if (actualType !== 'admin' && selectedType !== actualType) {
             await authRequest('/api/auth/logout', { method: 'POST' });
             throw new Error('These credentials belong to a ' + actualType + ' account. Choose the matching sign-in option.');
           }
@@ -79,6 +79,7 @@
       });
 
       authRequest('/api/auth/me').then(function (payload) {
+        if (payload.authenticated && payload.user && payload.user.role === 'admin') { window.location.replace('/admin.html'); return; }
         if (payload.authenticated) applyEntitlements(payload);
         else showSignedOut();
       }).catch(function () {

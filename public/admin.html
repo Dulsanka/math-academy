@@ -3,51 +3,66 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Manage Users | NZ Mathematics Academy</title>
+  <title>User Access Management | NZ Mathematics Academy</title>
   <link rel="stylesheet" href="/admin.css" />
 </head>
 <body>
   <main class="admin-shell">
     <header class="admin-header">
-      <div><p class="eyebrow">NZ Mathematics Academy</p><h1>User access management</h1><p>Grant workbook access, disable accounts, or reset a password.</p></div>
+      <div><p class="eyebrow">NZ Mathematics Academy · Administration</p><h1>User access management</h1><p>Manage staff, family registrations, parent accounts and learner access.</p></div>
       <a href="/">Return to workbooks</a>
     </header>
+    <nav class="admin-nav" aria-label="User management sections">
+      <a href="#admins" data-admin-page="admins">Admins</a>
+      <a href="#preapproved-parents" data-admin-page="preapproved-parents">Pre-approved Parent</a>
+      <a href="#registrations" data-admin-page="registrations">Pending registrations <span id="nav-pending-count" class="count-badge">0</span></a>
+      <a href="#accounts" data-admin-page="accounts">Parent accounts</a>
+      <a href="#progress" data-admin-page="progress">Learning progress</a>
+    </nav>
     <div id="admin-status" class="status" role="status" aria-live="polite"></div>
-    <section class="panel pending-panel">
-      <div class="section-head"><div><h2>Registrations awaiting approval <span id="pending-count" class="count-badge">0</span></h2><p>Review the learner’s details, then choose which workbooks to grant. Declined requests are deleted.</p></div><button id="refresh-users-pending" class="secondary" type="button">Refresh queue</button></div>
-      <div id="pending-users" class="users-list"></div>
+
+    <section id="view-admins" class="admin-view" aria-labelledby="admins-title">
+      <div class="panel section-intro"><h2 id="admins-title">Administrator accounts</h2><p>Review who can manage users and workbook entitlements. New administrators receive their username and one-time password setup link in separate emails.</p></div>
+      <section class="panel">
+        <h2>Add an administrator</h2>
+        <form id="create-admin-form" class="create-form" method="post">
+          <label>First name<input name="firstName" required maxlength="80" autocomplete="given-name" /></label>
+          <label>Surname<input name="surname" required maxlength="80" autocomplete="family-name" /></label>
+          <label>Username<input name="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9._-]{3,32}" autocomplete="off" /></label>
+          <label>Email<input name="email" type="email" required maxlength="254" autocomplete="email" /></label>
+          <p class="form-note">For security, no password is emailed. The administrator sets a password using the single-use link, which expires in 30 minutes.</p>
+          <button type="submit">Create administrator and send setup emails</button>
+        </form>
+      </section>
+      <section class="panel"><div class="section-head"><div><h2>Admins</h2><p>Name, username and email for each administrator.</p></div><button id="refresh-admins" class="secondary" type="button">Refresh admins</button></div><div id="admins-list" class="users-list"></div></section>
     </section>
-    <section class="panel administrator-panel">
-      <h2>Add an administrator</h2>
-      <p>Administrator accounts can manage users, approve parents and children, and grant workbook access. Use a unique username and a temporary password of at least 12 characters.</p>
-      <form id="create-admin-form" class="create-form" method="post">
-        <label>Username<input name="username" required minlength="3" maxlength="32" autocomplete="off" /></label>
-        <label>Temporary password<input name="password" type="password" required minlength="12" autocomplete="new-password" /></label>
-        <button type="submit">Create administrator</button>
-      </form>
+
+    <section id="view-preapproved-parents" class="admin-view" aria-labelledby="preapproved-title" hidden>
+      <div class="panel section-intro"><h2 id="preapproved-title">Create a pre-approved parent account</h2><p>Use for a family account created directly by an administrator. Parent accounts do not receive workbook access automatically; an administrator controls each child’s workbook access.</p></div>
+      <section class="panel">
+        <form id="create-parent-form" class="create-form" method="post">
+          <label>First name<input name="firstName" required maxlength="80" autocomplete="given-name" /></label>
+          <label>Surname<input name="surname" required maxlength="80" autocomplete="family-name" /></label>
+          <label>Email<input name="email" type="email" required maxlength="254" autocomplete="email" /></label>
+          <label>Date of birth<input name="dateOfBirth" type="date" required /></label>
+          <label class="wide-field">Address<input name="address" required maxlength="500" autocomplete="street-address" /></label>
+          <label>Username<input name="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9._-]{3,32}" autocomplete="off" /></label>
+          <p class="form-note">We will send the username and one-time password setup link in separate emails.</p>
+          <button type="submit">Create parent and send setup emails</button>
+        </form>
+      </section>
     </section>
-    <section class="panel parent-creation-panel">
-      <h2>Create an approved parent account</h2>
-      <p>Use this for parent accounts created directly by an administrator, such as when linking existing child profiles. Parent accounts created here can sign in immediately.</p>
-      <form id="create-parent-form" class="create-form" method="post">
-        <label>First name<input name="firstName" required maxlength="80" /></label>
-        <label>Surname<input name="surname" required maxlength="80" /></label>
-        <label>Email<input name="email" type="email" required maxlength="254" autocomplete="email" /></label>
-        <label>Date of birth<input name="dateOfBirth" type="date" required /></label>
-        <label>Address<input name="address" required maxlength="500" /></label>
-        <label>Username<input name="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9._-]{3,32}" autocomplete="off" /></label>
-        <label>Temporary password<input name="password" type="password" required minlength="12" maxlength="256" autocomplete="new-password" /></label>
-        <button type="submit">Create parent account</button>
-      </form>
+
+    <section id="view-registrations" class="admin-view" aria-labelledby="registrations-title" hidden>
+      <section class="panel"><div class="section-head"><div><h2 id="registrations-title">Registrations awaiting approval <span id="pending-count" class="count-badge">0</span></h2><p>Review parent and learner registrations, requested workbook access, and access change requests.</p></div><button id="refresh-users-pending" class="secondary" type="button">Refresh queue</button></div><div id="pending-users" class="users-list"></div></section>
     </section>
-    <section class="panel">
-      <div class="section-head"><div><h2>Child learning progress</h2><p>Administrator view across all child accounts and linked families.</p></div><button id="refresh-progress" class="secondary" type="button">Refresh progress</button></div>
-      <div class="admin-progress-filters"><label>Family or child<input id="admin-progress-search" type="search" placeholder="Search name, username, parent"></label><label>Workbook<select id="admin-progress-workbook"><option value="all">All workbooks</option></select></label></div>
-      <div id="admin-progress" class="users-list"></div>
+
+    <section id="view-accounts" class="admin-view" aria-labelledby="accounts-title" hidden>
+      <section class="panel"><div class="section-head"><div><h2 id="accounts-title">Parent accounts</h2><p>Each row shows a parent and the number of child profiles. Expand a parent to review family details and manage child workbook access.</p></div><button id="refresh-accounts" class="secondary" type="button">Refresh accounts</button></div><div id="parent-accounts-list" class="users-list"></div></section>
     </section>
-    <section class="panel">
-      <div class="section-head"><div><h2>Accounts</h2><p>Changes take effect on the user’s next request.</p></div><button id="refresh-users" class="secondary" type="button">Refresh</button></div>
-      <div id="users-list" class="users-list"></div>
+
+    <section id="view-progress" class="admin-view" aria-labelledby="progress-title" hidden>
+      <section class="panel"><div class="section-head"><div><h2 id="progress-title">Child learning progress</h2><p>Administrator view across all child accounts and linked families.</p></div><button id="refresh-progress" class="secondary" type="button">Refresh progress</button></div><div class="admin-progress-filters"><label>Family or child<input id="admin-progress-search" type="search" placeholder="Search name, username, parent"></label><label>Workbook<select id="admin-progress-workbook"><option value="all">All workbooks</option></select></label></div><div id="admin-progress" class="users-list"></div></section>
     </section>
   </main>
   <script src="/admin.js" defer></script>

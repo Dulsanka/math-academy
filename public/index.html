@@ -15,13 +15,12 @@
     <form id="login-form" class="auth-card" method="post">
       <div class="auth-mark">NZ∑</div>
       <h2 id="auth-title">Welcome back</h2>
-      <p id="login-prompt">Choose your account type, then sign in. Children use their own username and password.</p>
-      <fieldset class="login-type-picker" aria-label="Account type">
-        <legend>Sign in as</legend>
-        <label><input type="radio" name="accountType" value="parent" checked> Parent</label>
-        <label><input type="radio" name="accountType" value="child"> Child</label>
-        <label><input type="radio" name="accountType" value="admin"> Admin</label>
-      </fieldset>
+      <p id="login-prompt">Choose Parent or Child, then sign in with your username and password.</p>
+      <label for="login-account-type">Sign in as</label>
+      <select id="login-account-type" name="accountType" class="login-type-select" autocomplete="off">
+        <option value="parent">Parent or guardian</option>
+        <option value="child">Child</option>
+      </select>
       <label for="login-username">Username</label>
       <input id="login-username" name="username" type="text" autocomplete="username" required maxlength="32" />
       <label for="login-password">Password</label>

@@ -112,6 +112,15 @@ export function notificationEmail(kind, profile, detail = '') {
       message = `<p>Congratulations, ${name}! Your NZ Mathematics Academy account has been approved.</p><p>You can now sign in at <a href="${escapeHtml(detail)}">Math Academy</a> with the username you registered.</p>`;
       textMessage = `Your account is approved. Sign in at ${detail} with your username.`;
     }
+  } else if (kind === 'account-username') {
+    const accountLabel = profile.role === 'admin' ? 'administrator' : 'parent or guardian';
+    subject = 'Your Math Academy account details';
+    message = `<p>Hello ${name},</p><p>Your ${accountLabel} account has been created for NZ Mathematics Academy.</p><p>Your username is <strong>${escapeHtml(profile.username || '')}</strong>.</p><p>Open <a href="${escapeHtml(detail)}">Math Academy</a> after you set a password using the separate password setup email.</p>`;
+    textMessage = `Your ${accountLabel} account has been created. Username: ${profile.username || ''}. Open ${detail} after setting a password using the separate setup email.`;
+  } else if (kind === 'account-password-setup') {
+    subject = 'Set your Math Academy password';
+    message = `<p>Hello ${name},</p><p>Use this one-time link to choose a password for your Math Academy account. It expires in 30 minutes and can only be used once.</p><p><a href="${escapeHtml(detail)}">Set your password</a></p><p>If you did not expect this account, contact your academy administrator.</p>`;
+    textMessage = `Use this one-time link to set your Math Academy password. It expires in 30 minutes: ${detail}`;
   } else if (kind === 'reset') {
     subject = 'Reset your Math Academy password';
     message = `<p>Hello ${name},</p><p>Use the link below to choose a new password. The link expires in 30 minutes and can only be used once.</p><p><a href="${escapeHtml(detail)}">Reset password</a></p><p>If you did not request this, ignore this email.</p>`;

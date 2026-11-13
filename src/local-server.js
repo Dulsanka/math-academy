@@ -108,6 +108,21 @@ function localEmailEnv() {
   };
 }
 
+async function sendAccountInvitation(user, appUrl) {
+  const token = crypto.randomBytes(32).toString('hex');
+  user.resetTokenHash = crypto.createHash('sha256').update(token).digest('hex');
+  user.resetExpiresAt = Date.now() + 30 * 60 * 1000;
+  user.resetRequestedAt = Date.now();
+  saveUsers();
+  const setupUrl = new URL(`/reset-password.html?token=${token}`, appUrl).toString();
+  const results = await Promise.allSettled([
+    accountSupport.sendEmail(localEmailEnv(), user.email, accountSupport.notificationEmail('account-username', user, appUrl)),
+    accountSupport.sendEmail(localEmailEnv(), user.email, accountSupport.notificationEmail('account-password-setup', user, setupUrl))
+  ]);
+  const failed = results.filter((result) => result.status === 'rejected');
+  if (failed.length) throw new Error(`${failed.length} of the two account setup emails could not be sent.`);
+}
+
 function getCookie(req, name) {
   const cookieHeader = req.headers.cookie || '';
   for (const part of cookieHeader.split(';')) {
@@ -581,7 +596,9 @@ async function handleApi(req, res, urlPath) {
       const role = body.role;
       if (!['admin', 'parent'].includes(role)) return sendJson(res, 400, { error: 'Choose administrator or parent account. Child accounts must be created by a parent.' });
       if (!validUsername(username)) return sendJson(res, 400, { error: 'Username must be 3–32 characters using letters, numbers, dots, underscores or hyphens.' });
-      if (!validPassword(body.password)) return sendJson(res, 400, { error: 'Password must be at least 12 characters.' });
+      const hasInvitation = typeof body.email === 'string' && body.email.trim();
+      if (hasInvitation && !accountSupport.validEmail(body.email)) return sendJson(res, 400, { error: 'Enter a valid email address.' });
+      if (role === 'admin' && hasInvitation && (!String(body.firstName || '').trim() || !String(body.surname || '').trim())) return sendJson(res, 400, { error: 'Enter the administrator’s first name and surname.' });
       if (role === 'parent') {
         if (typeof body.firstName !== 'string' || !body.firstName.trim() || body.firstName.trim().length > 80 || typeof body.surname !== 'string' || !body.surname.trim() || body.surname.trim().length > 80 ||
             typeof body.address !== 'string' || !body.address.trim() || body.address.trim().length > 500 || !accountSupport.validEmail(body.email)) return sendJson(res, 400, { error: 'Enter valid parent name, email, and address details.' });
@@ -589,19 +606,31 @@ async function handleApi(req, res, urlPath) {
         if (age === null || age < 18) return sendJson(res, 400, { error: 'Parent accounts must belong to an adult aged 18 or over.' });
       }
       if (users.some((item) => item.username.toLowerCase() === username.toLowerCase())) return sendJson(res, 409, { error: 'That username already exists.' });
-      if (role === 'parent' && users.some((item) => (item.email || '').toLowerCase() === body.email.trim().toLowerCase())) return sendJson(res, 409, { error: 'That email address is already used by another account.' });
+      if (hasInvitation && users.some((item) => (item.email || '').toLowerCase() === body.email.trim().toLowerCase())) return sendJson(res, 409, { error: 'That email address is already used by another account.' });
       if (!isAllowedEntitlementList(body.entitlements || [])) return sendJson(res, 400, { error: 'One or more workbook entitlements are invalid.' });
-      const passwordFields = await makePassword(body.password);
+      const initialPassword = body.password || (hasInvitation ? crypto.randomBytes(24).toString('hex') : '');
+      if (!validPassword(initialPassword)) return sendJson(res, 400, { error: 'Password must be at least 12 characters.' });
+      const passwordFields = await makePassword(initialPassword);
       if (users.some((item) => item.username.toLowerCase() === username.toLowerCase())) return sendJson(res, 409, { error: 'That username already exists.' });
-      const created = { id: crypto.randomUUID(), username, role: role === 'admin' ? 'admin' : 'student', accountType: role, active: true, adminEnabled: true, parentEnabled: true, approvalStatus: 'approved', entitlements: role === 'admin' ? Object.keys(WORKBOOKS) : [], requestedEntitlements: [], firstName: role === 'parent' ? body.firstName.trim() : '', surname: role === 'parent' ? body.surname.trim() : '', email: role === 'parent' ? body.email.trim().toLowerCase() : '', dateOfBirth: role === 'parent' ? body.dateOfBirth : '', address: role === 'parent' ? body.address.trim() : '', schoolYear: '', parentId: null, ...passwordFields, createdAt: new Date().toISOString() };
+      const created = { id: crypto.randomUUID(), username, role: role === 'admin' ? 'admin' : 'student', accountType: role, active: true, adminEnabled: true, parentEnabled: true, approvalStatus: 'approved', entitlements: role === 'admin' ? Object.keys(WORKBOOKS) : [], requestedEntitlements: [], firstName: String(body.firstName || '').trim(), surname: String(body.surname || '').trim(), email: hasInvitation ? body.email.trim().toLowerCase() : '', dateOfBirth: role === 'parent' ? body.dateOfBirth : '', address: role === 'parent' ? body.address.trim() : '', schoolYear: '', parentId: null, ...passwordFields, createdAt: new Date().toISOString() };
       users.push(created); saveUsers();
-      if (role === 'parent') {
+      if (hasInvitation) {
         const appUrl = process.env.PUBLIC_APP_URL || `http://${req.headers.host || 'localhost:3000'}`;
-        try { await accountSupport.sendEmail(localEmailEnv(), created.email, accountSupport.notificationEmail('approved', created, appUrl)); }
-        catch (error) { console.error('Administrator-created parent welcome email could not be sent:', error.message); return sendJson(res, 201, { user: publicUser(created), emailSent: false, message: 'Parent account created, but the welcome email could not be sent. Use Send approval email in the account list to retry.' }); }
+        try { await sendAccountInvitation(created, appUrl); }
+        catch (error) { console.error('Administrator-created account invitation could not be sent:', error.message); return sendJson(res, 201, { user: publicUser(created), emailSent: false, message: `Account created, but ${error.message} Use Resend setup emails after checking email configuration.` }); }
         return sendJson(res, 201, { user: publicUser(created), emailSent: true });
       }
       return sendJson(res, 201, { user: publicUser(created) });
+    }
+
+    const invitationMatch = urlPath.match(/^\/api\/admin\/users\/([0-9a-f-]+)\/invitation-email$/i);
+    if (req.method === 'POST' && invitationMatch) {
+      const target = users.find((item) => item.id === invitationMatch[1] && ['admin', 'parent'].includes(item.accountType) && item.email);
+      if (!target) return sendJson(res, 404, { error: 'Administrator or parent account with an email address not found.' });
+      const appUrl = process.env.PUBLIC_APP_URL || `http://${req.headers.host || 'localhost:3000'}`;
+      try { await sendAccountInvitation(target, appUrl); }
+      catch (error) { return sendJson(res, 502, { error: error.message }); }
+      return sendJson(res, 200, { ok: true });
     }
 
     const match = urlPath.match(/^\/api\/admin\/users\/([0-9a-f-]+)$/i);

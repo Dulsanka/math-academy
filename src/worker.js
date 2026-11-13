@@ -159,6 +159,23 @@ async function derivePassword(password, saltHex) {
   return bytesToHex(new Uint8Array(bits));
 }
 
+async function sendAccountInvitation(env, user, appUrl) {
+  const now = Date.now();
+  const token = randomHex(32);
+  const tokenHash = await digestHex(token);
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM password_resets WHERE user_id = ? OR expires_at <= ?').bind(user.id, now),
+    env.DB.prepare('INSERT INTO password_resets (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)').bind(tokenHash, user.id, now + 30 * 60 * 1000, now)
+  ]);
+  const setupUrl = new URL(`/reset-password.html?token=${token}`, appUrl).toString();
+  const deliveries = await Promise.allSettled([
+    sendEmail(env, user.email, notificationEmail('account-username', user, appUrl)),
+    sendEmail(env, user.email, notificationEmail('account-password-setup', user, setupUrl))
+  ]);
+  const failed = deliveries.filter((result) => result.status === 'rejected');
+  if (failed.length) throw new Error(`Account created, but ${failed.length} of the two account setup emails could not be sent.`);
+}
+
 function equalHex(left, right) {
   const a = hexToBytes(left);
   const b = hexToBytes(right);
@@ -709,7 +726,11 @@ async function handleApi(request, env, url) {
     if (!['admin', 'parent'].includes(role)) return json({ error: 'Choose administrator or parent account. Child accounts must be created by a parent.' }, 400);
     const entitlements = body.entitlements || [];
     if (!validUsername(username)) return json({ error: 'Username must be 3-32 characters using letters, numbers, dots, underscores or hyphens.' }, 400);
-    if (!validPassword(body.password)) return json({ error: 'Password must be at least 12 characters.' }, 400);
+    const hasInvitation = typeof body.email === 'string' && body.email.trim();
+    if (hasInvitation && !validEmail(body.email)) return json({ error: 'Enter a valid email address.' }, 400);
+    if (role === 'admin' && hasInvitation && (typeof body.firstName !== 'string' || !body.firstName.trim() || typeof body.surname !== 'string' || !body.surname.trim())) return json({ error: 'Enter the administrator’s first name and surname.' }, 400);
+    const initialPassword = body.password || (hasInvitation ? randomHex(24) : '');
+    if (!validPassword(initialPassword)) return json({ error: 'Password must be at least 12 characters.' }, 400);
     if (role === 'parent') {
       if (typeof body.firstName !== 'string' || !body.firstName.trim() || body.firstName.trim().length > 80 || typeof body.surname !== 'string' || !body.surname.trim() || body.surname.trim().length > 80 ||
           typeof body.address !== 'string' || !body.address.trim() || body.address.trim().length > 500 || !validEmail(body.email)) return json({ error: 'Enter valid parent name, email, and address details.' }, 400);
@@ -719,7 +740,7 @@ async function handleApi(request, env, url) {
     if (role === 'parent' && (!Array.isArray(entitlements) || entitlements.length)) return json({ error: 'Parent accounts do not receive workbook access.' }, 400);
     if (role === 'admin' && entitlements.length) return json({ error: 'Administrator access is managed by role.' }, 400);
     const salt = randomHex(16);
-    const passwordHash = await derivePassword(body.password, salt);
+    const passwordHash = await derivePassword(initialPassword, salt);
     const id = crypto.randomUUID();
     try {
       await env.DB.prepare(
@@ -727,21 +748,30 @@ async function handleApi(request, env, url) {
           password_salt, password_hash, created_at, first_name, surname, email, email_key, date_of_birth, address)
          VALUES (?, ?, lower(?), ?, ?, 1, 1, 1, 'approved', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(id, username, username, role === 'admin' ? 'admin' : 'student', role, JSON.stringify(role === 'admin' ? Object.keys(WORKBOOKS) : []), salt, passwordHash, now,
-        role === 'parent' ? body.firstName.trim() : '', role === 'parent' ? body.surname.trim() : '', role === 'parent' ? body.email.trim().toLowerCase() : '', role === 'parent' ? body.email.trim().toLowerCase() : '', role === 'parent' ? body.dateOfBirth : '', role === 'parent' ? body.address.trim() : '').run();
+        body.firstName ? body.firstName.trim() : '', body.surname ? body.surname.trim() : '', hasInvitation ? body.email.trim().toLowerCase() : '', hasInvitation ? body.email.trim().toLowerCase() : '', role === 'parent' ? body.dateOfBirth : '', role === 'parent' ? body.address.trim() : '').run();
     } catch (error) {
       if (String(error.message).toLowerCase().includes('unique')) return json({ error: 'That username or email address is already in use.' }, 409);
       throw error;
     }
     const created = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first();
-    if (role === 'parent') {
-      try { await sendEmail(env, created.email, notificationEmail('approved', created, url.origin)); }
+    if (hasInvitation) {
+      try { await sendAccountInvitation(env, { ...created, firstName: created.first_name, role }, url.origin); }
       catch (error) {
-        console.error('Administrator-created parent welcome email could not be sent:', error.message);
-        return json({ user: publicUser(created), emailSent: false, message: 'Parent account created, but the welcome email could not be sent. Use Send approval email in the account list to retry.' }, 201);
+        console.error('Administrator-created account invitation could not be sent:', error.message);
+        return json({ user: publicUser(created), emailSent: false, message: `Account created, but ${error.message} Use Resend setup emails after checking email configuration.` }, 201);
       }
       return json({ user: publicUser(created), emailSent: true }, 201);
     }
     return json({ user: publicUser(created) }, 201);
+  }
+
+  const invitationMatch = pathname.match(/^\/api\/admin\/users\/([0-9a-f-]+)\/invitation-email$/i);
+  if (invitationMatch && request.method === 'POST') {
+    const row = await env.DB.prepare("SELECT * FROM users WHERE id = ? AND role IN ('admin','student') AND account_type IN ('admin','parent')").bind(invitationMatch[1]).first();
+    if (!row || !row.email) return json({ error: 'Administrator or parent account with an email address not found.' }, 404);
+    try { await sendAccountInvitation(env, { ...row, firstName: row.first_name, role: row.account_type }, url.origin); }
+    catch (error) { return json({ error: error.message }, 502); }
+    return json({ ok: true });
   }
 
   const passwordMatch = pathname.match(/^\/api\/admin\/users\/([0-9a-f-]+)\/password$/i);

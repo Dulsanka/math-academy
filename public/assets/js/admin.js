@@ -5,7 +5,8 @@
     ['year12', 'Year 12 NZ (NCEA Level 2)'], ['year13', 'Year 13 NZ (NCEA Level 3)']
   ];
   const status = document.getElementById('admin-status');
-  const usersList = document.getElementById('users-list');
+  const adminsList = document.getElementById('admins-list');
+  const parentAccountsList = document.getElementById('parent-accounts-list');
   const pendingList = document.getElementById('pending-users');
   const progressList = document.getElementById('admin-progress');
   let cachedProgress = [];
@@ -144,108 +145,97 @@
     if(!count)progressList.textContent='No child accounts match this filter.';
   }
 
+  function actionButton(label, className, handler) {
+    const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.className = className || 'secondary';
+    button.addEventListener('click', async function () { button.disabled = true; try { await handler(); } catch (error) { setStatus(error.message, false); } finally { button.disabled = false; } }); return button;
+  }
+
+  function passwordResetForm(user) {
+    const form = document.createElement('form'); form.className = 'reset-row';
+    const label = document.createElement('label'); label.textContent = 'Set a new password';
+    const input = document.createElement('input'); input.type = 'password'; input.minLength = 12; input.maxLength = 256; input.required = true; input.autocomplete = 'new-password';
+    const button = document.createElement('button'); button.type = 'submit'; button.className = 'secondary'; button.textContent = 'Reset password';
+    label.appendChild(input); form.append(label, button);
+    form.addEventListener('submit', async function (event) { event.preventDefault(); button.disabled = true; try { await request('/api/admin/users/' + encodeURIComponent(user.id) + '/password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: input.value }) }); form.reset(); setStatus('Password reset for ' + user.username + '; their active sessions were cleared.', true); } catch (error) { setStatus(error.message, false); } finally { button.disabled = false; } });
+    return form;
+  }
+
+  function emailEditForm(user) {
+    const form = document.createElement('form'); form.className = 'email-row';
+    const label = document.createElement('label'); label.textContent = 'Email';
+    const input = document.createElement('input'); input.type = 'email'; input.maxLength = 254; input.required = true; input.autocomplete = 'email'; input.value = user.email || '';
+    const button = document.createElement('button'); button.type = 'submit'; button.className = 'secondary'; button.textContent = 'Save email'; label.appendChild(input); form.append(label, button);
+    form.addEventListener('submit', async function (event) { event.preventDefault(); button.disabled = true; try { await request('/api/admin/users/' + encodeURIComponent(user.id), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: input.value.trim() }) }); setStatus('Updated email for ' + user.username + '.', true); await loadUsers(); } catch (error) { setStatus(error.message, false); } finally { button.disabled = false; } });
+    return form;
+  }
+
+  function renderAdmins(users) {
+    adminsList.replaceChildren();
+    const admins = users.filter(function (user) { return user.accountType === 'admin' || user.role === 'admin'; });
+    admins.forEach(function (user) {
+      const card = document.createElement('article'); card.className = 'user-card';
+      const heading = document.createElement('h3'); heading.textContent = ((user.firstName + ' ' + user.surname).trim() || 'Administrator') + (user.active ? '' : ' · Disabled'); card.appendChild(heading);
+      addProfileDetail(card, 'Username', user.username); addProfileDetail(card, 'Email', user.email || 'Not set');
+      const actions = document.createElement('div'); actions.className = 'user-actions';
+      if (user.email) actions.appendChild(actionButton('Resend setup emails', 'secondary', async function () { await request('/api/admin/users/' + encodeURIComponent(user.id) + '/invitation-email', { method: 'POST' }); setStatus('Sent username and password setup emails to ' + user.email + '.', true); }));
+      actions.appendChild(actionButton(user.active ? 'Disable admin' : 'Enable admin', 'secondary', async function () { await request('/api/admin/users/' + encodeURIComponent(user.id), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active: !user.active }) }); setStatus('Updated administrator access for ' + user.username + '.', true); await loadUsers(); }));
+      actions.appendChild(actionButton('Delete admin', 'danger', async function () { if (!window.confirm('Permanently delete administrator ' + user.username + '?')) return; await request('/api/admin/users/' + encodeURIComponent(user.id), { method: 'DELETE' }); setStatus('Deleted administrator ' + user.username + '.', true); await loadUsers(); }));
+      card.append(actions, passwordResetForm(user)); adminsList.appendChild(card);
+    });
+    if (!admins.length) adminsList.textContent = 'No administrator accounts found.';
+  }
+
+  function renderParentAccounts(users) {
+    parentAccountsList.replaceChildren();
+    const parents = users.filter(function (user) { return user.accountType === 'parent' && user.approvalStatus !== 'pending'; });
+    parents.forEach(function (parent) {
+      const children = users.filter(function (user) { return user.accountType === 'child' && user.parentId === parent.id; });
+      const details = document.createElement('details'); details.className = 'parent-account';
+      const summary = document.createElement('summary');
+      const label = document.createElement('span'); label.textContent = ((parent.firstName + ' ' + parent.surname).trim() || parent.username) + ' · ' + parent.username + ' · ' + children.length + (children.length === 1 ? ' child' : ' children') + (parent.active ? '' : ' · Disabled');
+      const email = document.createElement('small'); email.textContent = parent.email || 'No email'; summary.append(label, email); details.appendChild(summary);
+      const body = document.createElement('div'); body.className = 'parent-detail-body';
+      addProfileDetail(body, 'Date of birth', parent.dateOfBirth); addProfileDetail(body, 'Address', parent.address); addProfileDetail(body, 'Username', parent.username); addProfileDetail(body, 'Account status', parent.active ? 'Enabled' : 'Disabled');
+      body.append(emailEditForm(parent), passwordResetForm(parent));
+      const parentActions = document.createElement('div'); parentActions.className = 'user-actions';
+      if (parent.email) parentActions.appendChild(actionButton('Resend setup emails', 'secondary', async function () { await request('/api/admin/users/' + encodeURIComponent(parent.id) + '/invitation-email', { method: 'POST' }); setStatus('Sent setup emails to ' + parent.email + '.', true); }));
+      parentActions.appendChild(actionButton(parent.active ? 'Disable parent' : 'Enable parent', 'secondary', async function () { await request('/api/admin/users/' + encodeURIComponent(parent.id), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active: !parent.active }) }); setStatus('Updated parent account ' + parent.username + '.', true); await loadUsers(); }));
+      parentActions.appendChild(actionButton('Delete parent and children', 'danger', async function () { if (!window.confirm('Permanently delete ' + parent.username + ' and all linked child accounts?')) return; await request('/api/admin/users/' + encodeURIComponent(parent.id), { method: 'DELETE' }); setStatus('Deleted parent and linked child accounts.', true); await loadUsers(); }));
+      body.appendChild(parentActions);
+      const childrenTitle = document.createElement('h3'); childrenTitle.textContent = 'Children (' + children.length + ')'; body.appendChild(childrenTitle);
+      if (!children.length) { const empty = document.createElement('p'); empty.textContent = 'No child profiles are linked to this parent.'; body.appendChild(empty); }
+      children.forEach(function (child) {
+        const card = document.createElement('article'); card.className = 'child-account-card';
+        const title = document.createElement('h4'); title.textContent = ((child.firstName + ' ' + child.surname).trim() || child.username) + ' · ' + child.username; card.appendChild(title);
+        addProfileDetail(card, 'School year', child.schoolYear); addProfileDetail(card, 'Date of birth', child.dateOfBirth); addProfileDetail(card, 'Status', child.active ? 'Enabled' : 'Disabled');
+        const access = document.createElement('div'); access.className = 'entitlement-grid'; makeEntitlementInputs(access, child.entitlements || [], 'parent-child-' + child.id); card.appendChild(access);
+        const linkLabel = document.createElement('label'); linkLabel.textContent = 'Linked parent account';
+        const parentSelect = document.createElement('select'); parentSelect.append(new Option('Unassigned (sign-in disabled)', ''));
+        users.filter(function (item) { return item.accountType === 'parent' && item.approvalStatus === 'approved' && (item.active || item.id === child.parentId); }).forEach(function (item) { parentSelect.add(new Option(((item.firstName + ' ' + item.surname).trim() || item.username) + ' · ' + item.username + (item.active ? '' : ' (disabled)'), item.id)); });
+        parentSelect.value = child.parentId || parent.id; linkLabel.appendChild(parentSelect); card.appendChild(linkLabel);
+        const childActions = document.createElement('div'); childActions.className = 'user-actions';
+        childActions.appendChild(actionButton('Save access and parent', '', async function () { await request('/api/admin/users/' + encodeURIComponent(child.id), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entitlements: checkedValues(access), parentId: parentSelect.value || null }) }); setStatus('Saved workbook access and parent link for ' + child.username + '.', true); await loadUsers(); }));
+        childActions.appendChild(actionButton(child.active ? 'Disable child' : 'Enable child', 'secondary', async function () { await request('/api/admin/users/' + encodeURIComponent(child.id), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active: !child.active }) }); setStatus('Updated child account ' + child.username + '.', true); await loadUsers(); }));
+        childActions.appendChild(actionButton('Delete child', 'danger', async function () { if (!window.confirm('Permanently delete child account ' + child.username + '?')) return; await request('/api/admin/users/' + encodeURIComponent(child.id), { method: 'DELETE' }); setStatus('Deleted child account ' + child.username + '.', true); await loadUsers(); }));
+        card.appendChild(childActions); card.append(emailEditForm(child), passwordResetForm(child));
+        body.appendChild(card);
+      });
+      details.appendChild(body); parentAccountsList.appendChild(details);
+    });
+    if (!parents.length) parentAccountsList.textContent = 'No parent accounts found.';
+  }
+
   async function loadUsers() {
     const result = await request('/api/admin/users');
-    renderPending(result.users);
-    usersList.replaceChildren();
-    result.users.filter(function (user) { return user.approvalStatus !== 'pending' && user.accessRequestStatus !== 'pending'; }).forEach(function (user) {
-      const card = document.createElement('article');
-      card.className = 'user-card';
-      const top = document.createElement('div');
-      top.className = 'user-top';
-      const name = document.createElement('div');
-      name.innerHTML = '<span class="user-name"></span><span class="user-role"></span>';
-      name.querySelector('.user-name').textContent = user.username;
-      name.querySelector('.user-role').textContent = user.accountType === 'learner' ? user.role : user.accountType;
-      const activeLabel = document.createElement('label');
-      activeLabel.className = 'active-toggle';
-      const active = document.createElement('input');
-      active.type = 'checkbox';
-      active.checked = user.active;
-      activeLabel.append(active, document.createTextNode('Account enabled'));
-      top.append(name, activeLabel);
-
-      const emailForm = document.createElement('form'); emailForm.className = 'email-row'; emailForm.innerHTML = '<label>Account email<input type="email" maxlength="254" required autocomplete="email"></label><button type="submit" class="secondary">Update email</button>';
-      emailForm.querySelector('input').value = user.email || '';
-      emailForm.addEventListener('submit', async function (event) {
-        event.preventDefault(); const button = emailForm.querySelector('button'); button.disabled = true;
-        try { await request('/api/admin/users/' + encodeURIComponent(user.id), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: emailForm.querySelector('input').value.trim() }) }); setStatus('Updated email for ' + user.username + '.', true); await loadUsers(); }
-        catch (error) { setStatus(error.message, false); }
-        finally { button.disabled = false; }
-      });
-
-      const access = document.createElement('div');
-      access.className = 'entitlement-grid';
-      makeEntitlementInputs(access, user.entitlements, 'entitlement-' + user.id);
-      let parentAssignment = null;
-      if (user.accountType === 'child') {
-        const label=document.createElement('label');label.className='parent-assignment';label.textContent='Linked parent account';parentAssignment=document.createElement('select');parentAssignment.append(new Option('Unassigned (sign-in disabled)',''));result.users.filter(function(item){return item.accountType==='parent'&&item.active&&item.approvalStatus==='approved';}).forEach(function(parent){parentAssignment.add(new Option((parent.firstName+' '+parent.surname).trim()+' · '+parent.username,parent.id));});parentAssignment.value=user.parentId||'';label.append(parentAssignment);card.appendChild(label);
-      }
-      const actions = document.createElement('div');
-      actions.className = 'user-actions';
-      const save = document.createElement('button');
-      save.type = 'button'; save.textContent = 'Save access';
-      save.addEventListener('click', async function () {
-        save.disabled = true;
-        try {
-          await request('/api/admin/users/' + encodeURIComponent(user.id), {
-            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(Object.assign({ entitlements: checkedValues(access), active: active.checked }, parentAssignment ? { parentId: parentAssignment.value || null } : {}))
-          });
-          setStatus('Updated access for ' + user.username + '.', true);
-        } catch (error) { setStatus(error.message, false); }
-        finally { save.disabled = false; }
-      });
-      actions.appendChild(save);
-      if (user.email || user.parentEmail) {
-        const notify = document.createElement('button'); notify.type = 'button'; notify.className = 'secondary'; notify.textContent = 'Send approval email';
-        notify.addEventListener('click', async function () {
-          notify.disabled = true;
-          try { await request('/api/admin/users/' + encodeURIComponent(user.id) + '/approval-email', { method: 'POST' }); setStatus('Sent the access email to ' + user.username + '.', true); }
-          catch (error) { setStatus(error.message, false); }
-          finally { notify.disabled = false; }
-        });
-        actions.appendChild(notify);
-      }
-
-      const reset = document.createElement('form');
-      reset.className = 'reset-row';
-      reset.method = 'post';
-      reset.innerHTML = '<label>Set new password<input type="password" minlength="12" autocomplete="new-password" required /></label><button type="submit" class="secondary">Reset password</button>';
-      reset.addEventListener('submit', async function (event) {
-        event.preventDefault();
-        const passwordInput = reset.querySelector('input');
-        const button = reset.querySelector('button');
-        button.disabled = true;
-        try {
-          await request('/api/admin/users/' + encodeURIComponent(user.id) + '/password', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: passwordInput.value })
-          });
-          reset.reset(); setStatus('Password reset. ' + user.username + ' will need to sign in again.', true);
-        } catch (error) { setStatus(error.message, false); }
-        finally { button.disabled = false; }
-      });
-      const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'danger'; remove.textContent = 'Delete account';
-      remove.addEventListener('click', async function () {
-        const extra = user.accountType === 'parent' ? ' This will also permanently delete all linked child accounts.' : '';
-        if (!window.confirm('Permanently delete ' + user.username + '?' + extra)) return;
-        remove.disabled = true;
-        try { await request('/api/admin/users/' + encodeURIComponent(user.id), { method: 'DELETE' }); setStatus('Deleted account ' + user.username + '.', true); await loadUsers(); }
-        catch (error) { setStatus(error.message, false); }
-        finally { remove.disabled = false; }
-      });
-      actions.appendChild(remove);
-      card.append(top, emailForm, access, actions, reset);
-      usersList.appendChild(card);
-    });
-    if (!result.users.some(function (user) { return user.approvalStatus !== 'pending' && user.accessRequestStatus !== 'pending'; })) usersList.textContent = 'No approved accounts have been created yet.';
+    renderPending(result.users); renderAdmins(result.users); renderParentAccounts(result.users);
+    document.getElementById('nav-pending-count').textContent = document.getElementById('pending-count').textContent;
   }
 
   document.getElementById('create-admin-form').addEventListener('submit', async function (event) {
     event.preventDefault(); const form = event.currentTarget; const button = form.querySelector('button[type="submit"]'); button.disabled = true;
     try {
-      const result = await request('/api/admin/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: form.elements.username.value.trim(), password: form.elements.password.value, role: 'admin' }) });
-      form.reset(); setStatus('Created administrator account ' + result.user.username + '.', true); await loadUsers();
+      const result = await request('/api/admin/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'admin', firstName: form.elements.firstName.value.trim(), surname: form.elements.surname.value.trim(), username: form.elements.username.value.trim(), email: form.elements.email.value.trim() }) });
+      form.reset(); setStatus(result.emailSent === false ? result.message : 'Created administrator ' + result.user.username + ' and sent the two setup emails.', result.emailSent !== false); await loadUsers();
     } catch (error) { setStatus(error.message, false); }
     finally { button.disabled = false; }
   });
@@ -253,17 +243,25 @@
   document.getElementById('create-parent-form').addEventListener('submit', async function (event) {
     event.preventDefault(); const form=event.currentTarget; const button=form.querySelector('button[type="submit"]'); button.disabled=true;
     try {
-      const result=await request('/api/admin/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:'parent',username:form.elements.username.value.trim(),password:form.elements.password.value,firstName:form.elements.firstName.value.trim(),surname:form.elements.surname.value.trim(),email:form.elements.email.value.trim(),dateOfBirth:form.elements.dateOfBirth.value,address:form.elements.address.value.trim()})});
-      form.reset();setStatus(result.emailSent===false?(result.message||'Parent account created, but email delivery needs attention.'):'Created approved parent account '+result.user.username+' and sent its welcome email.',result.emailSent!==false);await loadUsers();
+      const result=await request('/api/admin/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:'parent',username:form.elements.username.value.trim(),firstName:form.elements.firstName.value.trim(),surname:form.elements.surname.value.trim(),email:form.elements.email.value.trim(),dateOfBirth:form.elements.dateOfBirth.value,address:form.elements.address.value.trim()})});
+      form.reset();setStatus(result.emailSent===false?(result.message||'Parent account created, but email delivery needs attention.'):'Created approved parent account '+result.user.username+' and sent the two setup emails.',result.emailSent!==false);await loadUsers();
     } catch(error){setStatus(error.message,false);} finally{button.disabled=false;}
   });
 
-  document.getElementById('refresh-users').addEventListener('click', function () {
+  function refreshUsers() {
     loadUsers().then(function () { setStatus('', true); }).catch(function (error) { setStatus(error.message, false); });
-  });
-  document.getElementById('refresh-users-pending').addEventListener('click', function () {
-    loadUsers().then(function () { setStatus('', true); }).catch(function (error) { setStatus(error.message, false); });
-  });
+  }
+  document.getElementById('refresh-admins').addEventListener('click', refreshUsers);
+  document.getElementById('refresh-accounts').addEventListener('click', refreshUsers);
+  document.getElementById('refresh-users-pending').addEventListener('click', refreshUsers);
+  function showAdminPage() {
+    const page = (window.location.hash || '#admins').slice(1);
+    const valid = ['admins', 'preapproved-parents', 'registrations', 'accounts', 'progress'];
+    const active = valid.includes(page) ? page : 'admins';
+    document.querySelectorAll('.admin-view').forEach(function (view) { view.hidden = view.id !== 'view-' + active; });
+    document.querySelectorAll('[data-admin-page]').forEach(function (link) { if (link.dataset.adminPage === active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current'); });
+  }
+  window.addEventListener('hashchange', showAdminPage); showAdminPage();
   const progressWorkbook=document.getElementById('admin-progress-workbook');WORKBOOKS.forEach(function(entry){progressWorkbook.add(new Option(entry[1],entry[0]));});
   document.getElementById('refresh-progress').addEventListener('click',function(){loadProgress().catch(function(error){setStatus(error.message,false);});});
   document.getElementById('admin-progress-search').addEventListener('input',renderProgress);progressWorkbook.addEventListener('change',renderProgress);
