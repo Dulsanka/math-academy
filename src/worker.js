@@ -1,5 +1,5 @@
 import WORKBOOKS from './workbooks.mjs';
-import { SCHOOL_YEARS, ageOnDate, sendEmail, sendToApplicantAndGuardian, notificationEmail, validateRegistration, validEmail } from './account-support.mjs';
+import { SCHOOL_YEARS, ageOnDate, sendEmail, sendToApplicantAndGuardian, notificationEmail, validateParentRegistration, validateRegistration, validEmail } from './account-support.mjs';
 
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
@@ -9,8 +9,8 @@ const SESSION_COOKIE = '__Host-math_academy_session';
 
 const PUBLIC_ASSETS = new Set([
   '/', '/index.html', '/assets/css/site.css', '/assets/css/interactive-workbook.css',
-  '/assets/css/curriculum-workbook.css', '/assets/css/access.css', '/assets/js/site.js', '/assets/js/register.js',
-  '/assets/js/reset-password.js', '/assets/js/forgot-password.js', '/register.html', '/forgot-password.html',
+  '/assets/css/curriculum-workbook.css', '/assets/css/access.css', '/assets/css/parent.css', '/assets/js/site.js', '/assets/js/register.js',
+  '/assets/js/reset-password.js', '/assets/js/forgot-password.js', '/assets/js/parent-register.js', '/register.html', '/parent-register.html', '/forgot-password.html',
   '/reset-password.html', '/assets/favicon.svg'
 ]);
 
@@ -21,6 +21,7 @@ const ADMIN_ASSETS = new Map([
   ['/admin.css', '/assets/css/admin.css']
 ]);
 const ACCOUNT_ASSETS = new Map([['/account.html', '/account.html'], ['/account.js', '/assets/js/account.js']]);
+const PARENT_ASSETS = new Map([['/parent.html', '/parent.html'], ['/parent.js', '/assets/js/parent.js']]);
 
 function json(payload, status = 200, headers = {}) {
   return new Response(JSON.stringify(payload), {
@@ -62,6 +63,7 @@ function publicUser(row) {
     id: row.id,
     username: row.username,
     role: row.role,
+    accountType: row.role === 'admin' ? 'admin' : (row.account_type || 'learner'),
     active: Boolean(row.active),
     entitlements
   };
@@ -73,7 +75,7 @@ function adminUser(row) {
     firstName: row.first_name || '', surname: row.surname || '', email: row.email || '',
     dateOfBirth: row.date_of_birth || '', address: row.address || '', schoolYear: row.school_year || '',
     requestedEntitlements: parseEntitlements(row.requested_entitlements),
-    parentName: row.parent_name || '', parentEmail: row.parent_email || '', createdAt: row.created_at
+    parentName: row.parent_name || '', parentEmail: row.parent_email || '', accessRequestStatus: row.access_request_status || 'none', createdAt: row.created_at
   };
 }
 
@@ -81,22 +83,35 @@ function parseEntitlements(value) {
   try { return JSON.parse(value || '[]'); } catch { return []; }
 }
 
+function sameEntitlements(left, right) {
+  return Array.isArray(left) && Array.isArray(right) && [...new Set(left)].sort().join('\0') === [...new Set(right)].sort().join('\0');
+}
+
 function accountProfile(row) {
   return {
-    id: row.id, username: row.username, role: row.role,
+    id: row.id, username: row.username, role: row.role, accountType: row.role === 'admin' ? 'admin' : (row.account_type || 'learner'),
     firstName: row.first_name || '', surname: row.surname || '', email: row.email || '',
     dateOfBirth: row.date_of_birth || '', address: row.address || '', schoolYear: row.school_year || '',
     parentName: row.parent_name || '', parentEmail: row.parent_email || ''
   };
 }
 
-function validProfile(body) {
+function parentChild(row) {
+  return {
+    id: row.id, username: row.username, firstName: row.first_name || '', surname: row.surname || '',
+    dateOfBirth: row.date_of_birth || '', schoolYear: row.school_year || '',
+    approvalStatus: row.approval_status || 'approved', accessRequestStatus: row.access_request_status || 'none', enabled: Boolean(row.parent_enabled),
+    entitlements: parseEntitlements(row.entitlements), requestedEntitlements: parseEntitlements(row.requested_entitlements)
+  };
+}
+
+function validProfile(body, requireSchoolYear = true) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return 'Profile details are invalid.';
   const age = ageOnDate(body.dateOfBirth);
   if (['firstName', 'surname', 'address', 'schoolYear'].some((key) => typeof body[key] !== 'string' || !body[key].trim())) return 'Complete all required profile fields.';
   if (body.firstName.trim().length > 80 || body.surname.trim().length > 80 || body.address.trim().length > 500) return 'Some profile fields are too long.';
   if (!validEmail(body.email)) return 'Enter a valid email address.';
-  if (!SCHOOL_YEARS.includes(body.schoolYear)) return 'Choose a valid school year.';
+  if (requireSchoolYear && !SCHOOL_YEARS.includes(body.schoolYear)) return 'Choose a valid school year.';
   if (age === null) return 'Enter a valid date of birth that is not in the future.';
   if (age < 18 && (!body.parentName?.trim() || body.parentName.trim().length > 160 || !validEmail(body.parentEmail))) return 'A parent or guardian name and email are required for applicants under 18.';
   return null;
@@ -184,7 +199,7 @@ async function getAuth(request, env) {
   if (!token || !/^[0-9a-f]{64}$/i.test(token)) return null;
   const tokenHash = await digestHex(token);
   const row = await env.DB.prepare(
-    `SELECT u.id, u.username, u.role, u.active, u.entitlements, u.email, u.parent_email
+    `SELECT u.id, u.username, u.role, u.account_type, u.active, u.entitlements, u.email, u.parent_email
        FROM sessions s JOIN users u ON u.id = s.user_id
       WHERE s.token_hash = ? AND s.expires_at > ? AND u.active = 1`
   ).bind(tokenHash, Date.now()).first();
@@ -265,9 +280,9 @@ async function handleApi(request, env, url) {
     };
     try {
       await env.DB.prepare(
-        `INSERT INTO users (id, username, username_key, role, active, approval_status, entitlements, requested_entitlements,
+        `INSERT INTO users (id, username, username_key, role, account_type, active, approval_status, entitlements, requested_entitlements,
           password_salt, password_hash, created_at, first_name, surname, email, email_key, date_of_birth, address, school_year, parent_name, parent_email)
-         VALUES (?, ?, lower(?), 'student', 0, 'pending', '[]', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, lower(?), 'student', 'learner', 0, 'pending', '[]', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).bind(id, username, username, JSON.stringify([...new Set(body.requestedEntitlements)]), salt, passwordHash, now,
         profile.firstName, profile.surname, email, email, profile.dateOfBirth, profile.address, profile.schoolYear, profile.parentName, profile.parentEmail).run();
     } catch (error) {
@@ -281,6 +296,35 @@ async function handleApi(request, env, url) {
       await env.DB.prepare('DELETE FROM users WHERE id = ? AND approval_status = \'pending\'').bind(id).run();
       return json({ error: error.message }, 503);
     }
+    return json({ ok: true }, 201);
+  }
+
+  if (pathname === '/api/auth/register-parent' && request.method === 'POST') {
+    let body;
+    try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
+    const invalid = validateParentRegistration(body);
+    if (invalid) return json({ error: invalid }, 400);
+    if (body.privacyAcknowledged !== true) return json({ error: 'Please acknowledge the privacy notice before submitting.' }, 400);
+    const ip = (request.headers.get('CF-Connecting-IP') || 'unknown').slice(0, 80);
+    const attempt = await consumeLoginAttempt(env, `parent-register:${ip}`, 5, now);
+    if (attempt.blocked_until > now) return json({ error: 'Too many registration attempts. Please try again later.' }, 429);
+    const username = body.username.trim(); const email = body.email.trim().toLowerCase();
+    const existing = await env.DB.prepare('SELECT id FROM users WHERE username_key=lower(?) OR lower(email)=? LIMIT 1').bind(username, email).first();
+    if (existing) return json({ error: 'That username or email address is already registered.' }, 409);
+    const salt = randomHex(16); const passwordHash = await derivePassword(body.password, salt); const id = crypto.randomUUID();
+    try {
+      await env.DB.prepare(
+        `INSERT INTO users (id, username, username_key, role, account_type, active, approval_status, entitlements, requested_entitlements,
+          password_salt, password_hash, created_at, first_name, surname, email, email_key, date_of_birth, address)
+         VALUES (?, ?, lower(?), 'student', 'parent', 0, 'pending', '[]', '[]', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(id, username, username, salt, passwordHash, now, body.firstName.trim(), body.surname.trim(), email, email,
+        body.dateOfBirth, body.address.trim()).run();
+    } catch (error) {
+      if (String(error.message).toLowerCase().includes('unique')) return json({ error: 'That username or email address is already registered.' }, 409);
+      throw error;
+    }
+    try { await sendEmail(env, email, notificationEmail('parent-pending', { firstName: body.firstName }), `parent-registration-${id}-${email}`); }
+    catch (error) { await env.DB.prepare("DELETE FROM users WHERE id=? AND approval_status='pending'").bind(id).run(); return json({ error: error.message }, 503); }
     return json({ ok: true }, 201);
   }
 
@@ -339,7 +383,7 @@ async function handleApi(request, env, url) {
     if (!accountAuth) return json({ error: 'Sign in is required.' }, 401);
     let body;
     try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
-    const invalid = validProfile(body);
+    const invalid = validProfile(body, accountAuth.user.accountType !== 'parent');
     if (invalid) return json({ error: invalid }, 400);
     const email = body.email.trim().toLowerCase();
     if (email !== accountAuth.email.toLowerCase() || (body.parentEmail?.trim().toLowerCase() || '') !== accountAuth.parentEmail.toLowerCase()) {
@@ -352,6 +396,22 @@ async function handleApi(request, env, url) {
         body.parentName?.trim() || '', body.parentEmail?.trim().toLowerCase() || '', accountAuth.user.id).run();
     const row = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(accountAuth.user.id).first();
     return json({ profile: accountProfile(row) });
+  }
+
+  if (pathname === '/api/account/email' && request.method === 'POST') {
+    const accountAuth = await getAuth(request, env);
+    if (!accountAuth || accountAuth.user.role !== 'admin') return json({ error: 'Administrator access is required to change this email address.' }, 403);
+    let body;
+    try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
+    if (!body || typeof body !== 'object' || !validEmail(body.email) || typeof body.currentPassword !== 'string') return json({ error: 'Enter a valid email address and your current password.' }, 400);
+    const row = await env.DB.prepare('SELECT password_salt,password_hash FROM users WHERE id=?').bind(accountAuth.user.id).first();
+    if (!equalHex(await derivePassword(body.currentPassword, row.password_salt), row.password_hash)) return json({ error: 'Current password is incorrect.' }, 400);
+    const email = body.email.trim().toLowerCase();
+    const duplicate = await env.DB.prepare('SELECT id FROM users WHERE email_key=lower(?) AND id != ? LIMIT 1').bind(email, accountAuth.user.id).first();
+    if (duplicate) return json({ error: 'That email address is already used by another account.' }, 409);
+    try { await env.DB.prepare('UPDATE users SET email=?,email_key=lower(?) WHERE id=?').bind(email, email, accountAuth.user.id).run(); }
+    catch (error) { if (String(error.message).toLowerCase().includes('unique')) return json({ error: 'That email address is already used by another account.' }, 409); throw error; }
+    return json({ ok: true, email });
   }
 
   if (pathname === '/api/account/password' && request.method === 'POST') {
@@ -369,6 +429,92 @@ async function handleApi(request, env, url) {
       env.DB.prepare('DELETE FROM sessions WHERE user_id=? AND token_hash != ?').bind(accountAuth.user.id, accountAuth.tokenHash)
     ]);
     return json({ ok: true });
+  }
+
+  if (pathname.startsWith('/api/parent/')) {
+    const parentAuth = await getAuth(request, env);
+    if (!parentAuth || parentAuth.user.accountType !== 'parent') return json({ error: 'Approved parent or guardian access is required.' }, 403);
+    if (pathname === '/api/parent/children' && request.method === 'GET') {
+      const result = await env.DB.prepare("SELECT * FROM users WHERE parent_id=? AND account_type='child' ORDER BY username_key").bind(parentAuth.user.id).all();
+      return json({ children: (result.results || []).map(parentChild) });
+    }
+    if (pathname === '/api/parent/children' && request.method === 'POST') {
+      let body;
+      try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return json({ error: 'Child details are invalid.' }, 400);
+      if (typeof body.firstName !== 'string' || !body.firstName.trim() || body.firstName.trim().length > 80 || typeof body.surname !== 'string' || !body.surname.trim() || body.surname.trim().length > 80) return json({ error: 'Enter the child’s first name and surname.' }, 400);
+      const age = ageOnDate(body.dateOfBirth);
+      if (age === null || age >= 18) return json({ error: 'A child account must have a valid date of birth for someone under 18.' }, 400);
+      if (!SCHOOL_YEARS.slice(0, 8).includes(body.schoolYear)) return json({ error: 'Choose a school year from Year 6 to Year 13.' }, 400);
+      if (!validUsername(body.username)) return json({ error: 'Username must be 3-32 characters using letters, numbers, dots, underscores or hyphens.' }, 400);
+      if (!validPassword(body.password)) return json({ error: 'Password must be at least 12 characters.' }, 400);
+      if (!allowedEntitlementList(body.requestedEntitlements) || !body.requestedEntitlements.length) return json({ error: 'Choose at least one workbook access request.' }, 400);
+      const parent = await env.DB.prepare('SELECT * FROM users WHERE id=? AND account_type=\'parent\' AND active=1').bind(parentAuth.user.id).first();
+      const salt = randomHex(16); const passwordHash = await derivePassword(body.password, salt); const id = crypto.randomUUID();
+      try {
+        await env.DB.prepare(
+          `INSERT INTO users (id, username, username_key, role, account_type, parent_id, active, parent_enabled, admin_enabled, approval_status,
+            entitlements, requested_entitlements, password_salt, password_hash, created_at, first_name, surname, email, email_key,
+            date_of_birth, address, school_year, parent_name, parent_email)
+           VALUES (?, ?, lower(?), 'student', 'child', ?, 0, 1, 1, 'pending', '[]', ?, ?, ?, ?, ?, ?, '', '', ?, ?, ?, ?, ?)`
+        ).bind(id, body.username.trim(), body.username.trim(), parentAuth.user.id, JSON.stringify([...new Set(body.requestedEntitlements)]),
+          salt, passwordHash, now, body.firstName.trim(), body.surname.trim(), body.dateOfBirth, parent.address, body.schoolYear,
+          `${parent.first_name} ${parent.surname}`.trim(), parent.email).run();
+      } catch (error) {
+        if (String(error.message).toLowerCase().includes('unique')) return json({ error: 'That username is already registered.' }, 409);
+        throw error;
+      }
+      const created = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(id).first();
+      return json({ child: parentChild(created) }, 201);
+    }
+    const childMatch = pathname.match(/^\/api\/parent\/children\/([0-9a-f-]+)$/i);
+    if (childMatch && request.method === 'PATCH') {
+      let body;
+      try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return json({ error: 'Child details are invalid.' }, 400);
+      const child = await env.DB.prepare("SELECT * FROM users WHERE id=? AND parent_id=? AND account_type='child'").bind(childMatch[1], parentAuth.user.id).first();
+      if (!child) return json({ error: 'Child account not found.' }, 404);
+      const firstName = body.firstName === undefined ? child.first_name : String(body.firstName).trim();
+      const surname = body.surname === undefined ? child.surname : String(body.surname).trim();
+      const dateOfBirth = body.dateOfBirth === undefined ? child.date_of_birth : body.dateOfBirth;
+      const schoolYear = body.schoolYear === undefined ? child.school_year : body.schoolYear;
+      const requested = body.requestedEntitlements === undefined ? parseEntitlements(child.requested_entitlements) : body.requestedEntitlements;
+      let enabled = Boolean(child.parent_enabled);
+      if (body.enabled !== undefined) {
+        if (typeof body.enabled !== 'boolean') return json({ error: 'Child account enablement must be true or false.' }, 400);
+        enabled = body.enabled;
+      }
+      if (!firstName || firstName.length > 80 || !surname || surname.length > 80) return json({ error: 'Enter the child’s first name and surname.' }, 400);
+      const age = ageOnDate(dateOfBirth);
+      if (age === null || age >= 18) return json({ error: 'A child account must have a valid date of birth for someone under 18.' }, 400);
+      if (!SCHOOL_YEARS.slice(0, 8).includes(schoolYear)) return json({ error: 'Choose a school year from Year 6 to Year 13.' }, 400);
+      if (!allowedEntitlementList(requested)) return json({ error: 'One or more workbook requests are invalid.' }, 400);
+      const isActive = Boolean(enabled && child.admin_enabled && child.approval_status === 'approved');
+      const requestStatus = child.approval_status === 'approved' && !sameEntitlements(requested, parseEntitlements(child.entitlements)) ? 'pending' : 'none';
+      await env.DB.prepare('UPDATE users SET first_name=?, surname=?, date_of_birth=?, school_year=?, requested_entitlements=?, access_request_status=?, parent_enabled=?, active=? WHERE id=? AND parent_id=?')
+        .bind(firstName, surname, dateOfBirth, schoolYear, JSON.stringify([...new Set(requested)]), requestStatus, enabled ? 1 : 0, isActive ? 1 : 0, child.id, parentAuth.user.id).run();
+      const updated = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(child.id).first();
+      return json({ child: parentChild(updated) });
+    }
+    if (childMatch && request.method === 'DELETE') {
+      const result = await env.DB.prepare("DELETE FROM users WHERE id=? AND parent_id=? AND account_type='child'").bind(childMatch[1], parentAuth.user.id).run();
+      return result.meta.changes ? json({ ok: true }) : json({ error: 'Child account not found.' }, 404);
+    }
+    const childPasswordMatch = pathname.match(/^\/api\/parent\/children\/([0-9a-f-]+)\/password$/i);
+    if (childPasswordMatch && request.method === 'POST') {
+      let body;
+      try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
+      if (!body || !validPassword(body.password)) return json({ error: 'Password must be at least 12 characters.' }, 400);
+      const child = await env.DB.prepare("SELECT id FROM users WHERE id=? AND parent_id=? AND account_type='child'").bind(childPasswordMatch[1], parentAuth.user.id).first();
+      if (!child) return json({ error: 'Child account not found.' }, 404);
+      const salt = randomHex(16); const passwordHash = await derivePassword(body.password, salt);
+      await env.DB.batch([
+        env.DB.prepare('UPDATE users SET password_salt=?, password_hash=? WHERE id=?').bind(salt, passwordHash, child.id),
+        env.DB.prepare('DELETE FROM sessions WHERE user_id=?').bind(child.id)
+      ]);
+      return json({ ok: true });
+    }
+    return json({ error: 'Parent endpoint not found.' }, 404);
   }
 
   if (pathname === '/api/auth/me' && request.method === 'GET') {
@@ -440,9 +586,13 @@ async function handleApi(request, env, url) {
   if (approvalMatch && request.method === 'POST') {
     let body;
     try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
-    if (!body || typeof body !== 'object' || !allowedEntitlementList(body.entitlements) || !body.entitlements.length) return json({ error: 'Select at least one workbook to grant.' }, 400);
-    const update = await env.DB.prepare("UPDATE users SET active=1, approval_status='approved', entitlements=? WHERE id=? AND approval_status='pending' AND role='student'")
-      .bind(JSON.stringify([...new Set(body.entitlements)]), approvalMatch[1]).run();
+    if (!body || typeof body !== 'object' || !allowedEntitlementList(body.entitlements)) return json({ error: 'Select valid workbook access.' }, 400);
+    const pending = await env.DB.prepare("SELECT account_type, parent_enabled, admin_enabled FROM users WHERE id=? AND approval_status='pending' AND role='student'").bind(approvalMatch[1]).first();
+    if (!pending) return json({ error: 'This registration is no longer pending.' }, 409);
+    if (pending.account_type !== 'parent' && !body.entitlements.length) return json({ error: 'Select at least one workbook to grant.' }, 400);
+    const active = Boolean(pending.parent_enabled && pending.admin_enabled);
+    const update = await env.DB.prepare("UPDATE users SET active=?, approval_status='approved', entitlements=? WHERE id=? AND approval_status='pending' AND role='student'")
+      .bind(active ? 1 : 0, JSON.stringify([...new Set(body.entitlements)]), approvalMatch[1]).run();
     if (!update.meta.changes) return json({ error: 'This registration is no longer pending.' }, 409);
     const row = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(approvalMatch[1]).first();
     const profile = { ...row, firstName: row.first_name, parentEmail: row.parent_email };
@@ -472,18 +622,20 @@ async function handleApi(request, env, url) {
     try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
     if (!body || typeof body !== 'object' || Array.isArray(body)) return json({ error: 'Request body must be an object.' }, 400);
     const username = String(body.username || '').trim();
+    const role = body.role === undefined ? 'student' : body.role;
+    if (!['student', 'admin'].includes(role)) return json({ error: 'Choose either student or administrator.' }, 400);
     const entitlements = body.entitlements || [];
     if (!validUsername(username)) return json({ error: 'Username must be 3-32 characters using letters, numbers, dots, underscores or hyphens.' }, 400);
     if (!validPassword(body.password)) return json({ error: 'Password must be at least 12 characters.' }, 400);
-    if (!allowedEntitlementList(entitlements)) return json({ error: 'One or more workbook entitlements are invalid.' }, 400);
+    if (role !== 'admin' && !allowedEntitlementList(entitlements)) return json({ error: 'One or more workbook entitlements are invalid.' }, 400);
     const salt = randomHex(16);
     const passwordHash = await derivePassword(body.password, salt);
     const id = crypto.randomUUID();
     try {
       await env.DB.prepare(
-        `INSERT INTO users (id, username, username_key, role, active, entitlements, password_salt, password_hash, created_at)
-         VALUES (?, ?, lower(?), 'student', 1, ?, ?, ?, ?)`
-      ).bind(id, username, username, JSON.stringify([...new Set(entitlements)]), salt, passwordHash, now).run();
+        `INSERT INTO users (id, username, username_key, role, account_type, active, approval_status, entitlements, password_salt, password_hash, created_at)
+         VALUES (?, ?, lower(?), ?, ?, 1, 'approved', ?, ?, ?, ?)`
+      ).bind(id, username, username, role, role === 'admin' ? 'admin' : 'learner', JSON.stringify(role === 'admin' ? Object.keys(WORKBOOKS) : [...new Set(entitlements)]), salt, passwordHash, now).run();
     } catch (error) {
       if (String(error.message).toLowerCase().includes('unique')) return json({ error: 'That username or email address is already in use.' }, 409);
       throw error;
@@ -510,6 +662,17 @@ async function handleApi(request, env, url) {
   }
 
   const userMatch = pathname.match(/^\/api\/admin\/users\/([0-9a-f-]+)$/i);
+  if (userMatch && request.method === 'DELETE') {
+    const result = await env.DB.prepare(
+      `DELETE FROM users WHERE id = ? AND (role != 'admin' OR active = 0 OR
+        (SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = 1) > 1)`
+    ).bind(userMatch[1]).run();
+    if (!result.meta.changes) {
+      const target = await env.DB.prepare('SELECT id FROM users WHERE id=?').bind(userMatch[1]).first();
+      return target ? json({ error: 'Keep at least one active administrator.' }, 400) : json({ error: 'User not found.' }, 404);
+    }
+    return json({ ok: true });
+  }
   if (userMatch && request.method === 'PATCH') {
     let body;
     try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
@@ -519,6 +682,7 @@ async function handleApi(request, env, url) {
     let username = target.username;
     let entitlements;
     let active = Boolean(target.active);
+    let adminEnabled = Boolean(target.admin_enabled);
     let email = target.email || '';
     if (body.username !== undefined) {
       username = String(body.username).trim();
@@ -530,7 +694,8 @@ async function handleApi(request, env, url) {
     } else entitlements = JSON.parse(target.entitlements || '[]');
     if (body.active !== undefined) {
       if (typeof body.active !== 'boolean') return json({ error: 'Active must be true or false.' }, 400);
-      active = body.active;
+      adminEnabled = body.active;
+      active = Boolean(body.active && target.parent_enabled && target.approval_status === 'approved');
     }
     if (body.email !== undefined) {
       if (!validEmail(body.email)) return json({ error: 'Enter a valid email address.' }, 400);
@@ -540,10 +705,10 @@ async function handleApi(request, env, url) {
     }
     try {
       const update = await env.DB.prepare(
-        `UPDATE users SET username = ?, username_key = lower(?), entitlements = ?, active = ?, email = ?, email_key = lower(?)
+        `UPDATE users SET username = ?, username_key = lower(?), entitlements = ?, active = ?, admin_enabled = ?, email = ?, email_key = lower(?)
           WHERE id = ? AND (? = 1 OR role != 'admin' OR active = 0 OR
             (SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = 1) > 1)`
-      ).bind(username, username, JSON.stringify(entitlements), active ? 1 : 0, email, email, target.id, active ? 1 : 0).run();
+      ).bind(username, username, JSON.stringify(entitlements), active ? 1 : 0, adminEnabled ? 1 : 0, email, email, target.id, active ? 1 : 0).run();
       if (!active && target.role === 'admin' && !update.meta.changes) {
         return json({ error: 'Keep at least one active administrator.' }, 400);
       }
@@ -606,6 +771,12 @@ async function handleRequest(request, env) {
   if (ACCOUNT_ASSETS.has(path)) {
     if (!auth) return secure(text('Sign in is required.', 401));
     return serveAsset(request, env, 'private, no-store', ACCOUNT_ASSETS.get(path));
+  }
+
+  if (PARENT_ASSETS.has(path)) {
+    if (!auth) return secure(text('Sign in is required.', 401));
+    if (auth.user.accountType !== 'parent') return secure(text('Parent or guardian access is required.', 403));
+    return serveAsset(request, env, 'private, no-store', PARENT_ASSETS.get(path));
   }
 
   const matchingWorkbooks = workbooksForPath(path);

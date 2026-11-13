@@ -57,14 +57,16 @@
       addProfileDetail(card, 'Email', user.email); addProfileDetail(card, 'Date of birth', user.dateOfBirth);
       addProfileDetail(card, 'Address', user.address); addProfileDetail(card, 'School year', user.schoolYear);
       addProfileDetail(card, 'Parent or guardian', user.parentName ? user.parentName + ' (' + user.parentEmail + ')' : 'Not required');
-      const requested = document.createElement('p'); requested.className = 'profile-detail'; requested.textContent = 'Requested: ' + user.requestedEntitlements.map(function (key) { const match = WORKBOOKS.find(function (entry) { return entry[0] === key; }); return match ? match[1] : key; }).join(', '); card.appendChild(requested);
-      const access = document.createElement('div'); access.className = 'entitlement-grid'; makeEntitlementInputs(access, user.requestedEntitlements, 'grant-' + user.id); card.appendChild(access);
+      const isParent = user.accountType === 'parent';
+      const requested = document.createElement('p'); requested.className = 'profile-detail';
+      requested.textContent = isParent ? 'Parent account request. This account has no workbook access unless an administrator grants it separately.' : 'Requested: ' + user.requestedEntitlements.map(function (key) { const match = WORKBOOKS.find(function (entry) { return entry[0] === key; }); return match ? match[1] : key; }).join(', '); card.appendChild(requested);
+      const access = document.createElement('div'); access.className = 'entitlement-grid'; makeEntitlementInputs(access, user.requestedEntitlements, 'grant-' + user.id); if (!isParent) card.appendChild(access);
       const actions = document.createElement('div'); actions.className = 'user-actions';
-      const approve = document.createElement('button'); approve.type = 'button'; approve.textContent = 'Approve selected access';
+      const approve = document.createElement('button'); approve.type = 'button'; approve.textContent = isParent ? 'Approve parent account' : 'Approve selected workbook access';
       approve.addEventListener('click', async function () {
-        const entitlements = checkedValues(access); if (!entitlements.length) { setStatus('Choose at least one workbook to grant.', false); return; }
+        const entitlements = isParent ? [] : checkedValues(access); if (!isParent && !entitlements.length) { setStatus('Choose at least one workbook to grant.', false); return; }
         approve.disabled = true;
-        try { await request('/api/admin/registrations/' + encodeURIComponent(user.id) + '/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entitlements: entitlements }) }); setStatus('Approved ' + user.username + ' and sent the access email.', true); await loadUsers(); }
+        try { await request('/api/admin/registrations/' + encodeURIComponent(user.id) + '/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entitlements: entitlements }) }); setStatus(isParent ? 'Approved parent account ' + user.username + ' and sent the email.' : 'Approved ' + user.username + ' and sent the access email.', true); await loadUsers(); }
         catch (error) { setStatus(error.message, false); await loadUsers().catch(function () {}); }
         finally { approve.disabled = false; }
       });
@@ -93,7 +95,7 @@
       const name = document.createElement('div');
       name.innerHTML = '<span class="user-name"></span><span class="user-role"></span>';
       name.querySelector('.user-name').textContent = user.username;
-      name.querySelector('.user-role').textContent = user.role;
+      name.querySelector('.user-role').textContent = user.accountType === 'learner' ? user.role : user.accountType;
       const activeLabel = document.createElement('label');
       activeLabel.className = 'active-toggle';
       const active = document.createElement('input');
@@ -130,7 +132,7 @@
         finally { save.disabled = false; }
       });
       actions.appendChild(save);
-      if (user.email) {
+      if (user.email || user.parentEmail) {
         const notify = document.createElement('button'); notify.type = 'button'; notify.className = 'secondary'; notify.textContent = 'Send approval email';
         notify.addEventListener('click', async function () {
           notify.disabled = true;
@@ -158,6 +160,16 @@
         } catch (error) { setStatus(error.message, false); }
         finally { button.disabled = false; }
       });
+      const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'danger'; remove.textContent = 'Delete account';
+      remove.addEventListener('click', async function () {
+        const extra = user.accountType === 'parent' ? ' This will also permanently delete all linked child accounts.' : '';
+        if (!window.confirm('Permanently delete ' + user.username + '?' + extra)) return;
+        remove.disabled = true;
+        try { await request('/api/admin/users/' + encodeURIComponent(user.id), { method: 'DELETE' }); setStatus('Deleted account ' + user.username + '.', true); await loadUsers(); }
+        catch (error) { setStatus(error.message, false); }
+        finally { remove.disabled = false; }
+      });
+      actions.appendChild(remove);
       card.append(top, emailForm, access, actions, reset);
       usersList.appendChild(card);
     });
@@ -179,6 +191,15 @@
       makeEntitlementInputs(form.querySelector('[data-entitlements]'), [], 'new-entitlement');
       setStatus('Created account ' + result.user.username + '.', true);
       await loadUsers();
+    } catch (error) { setStatus(error.message, false); }
+    finally { button.disabled = false; }
+  });
+
+  document.getElementById('create-admin-form').addEventListener('submit', async function (event) {
+    event.preventDefault(); const form = event.currentTarget; const button = form.querySelector('button[type="submit"]'); button.disabled = true;
+    try {
+      const result = await request('/api/admin/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: form.elements.username.value.trim(), password: form.elements.password.value, role: 'admin' }) });
+      form.reset(); setStatus('Created administrator account ' + result.user.username + '.', true); await loadUsers();
     } catch (error) { setStatus(error.message, false); }
     finally { button.disabled = false; }
   });

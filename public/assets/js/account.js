@@ -10,12 +10,22 @@
   function setFormValues(form, data) { Object.keys(data).forEach(function (key) { if (form.elements[key]) form.elements[key].value = data[key] || ''; }); }
   function ageFor(value) { if (!value) return null; const born = new Date(value + 'T00:00:00Z'); const now = new Date(); let age = now.getUTCFullYear() - born.getUTCFullYear(); if (now.getUTCMonth() < born.getUTCMonth() || (now.getUTCMonth() === born.getUTCMonth() && now.getUTCDate() < born.getUTCDate())) age -= 1; return age; }
   function updateGuardian() { const age = ageFor(profileForm.elements.dateOfBirth.value); const required = age !== null && age < 18; guardianBox.classList.toggle('hidden', !required); profileForm.elements.parentName.required = required; profileForm.elements.parentEmail.required = required; }
-  request('/api/account').then(function (result) { setFormValues(profileForm, result.profile); updateGuardian(); }).catch(function () { window.location.replace('/'); });
+  request('/api/account').then(function (result) {
+    setFormValues(profileForm, result.profile); updateGuardian();
+    if (result.profile.accountType === 'parent') { document.getElementById('school-year-field').classList.add('hidden'); profileForm.elements.schoolYear.required = false; }
+    if (result.profile.role === 'admin') document.getElementById('admin-email-panel').classList.remove('hidden');
+  }).catch(function () { window.location.replace('/'); });
   profileForm.elements.dateOfBirth.addEventListener('change', updateGuardian);
   profileForm.addEventListener('submit', async function (event) {
     event.preventDefault(); const button = profileForm.querySelector('button'); const status = document.getElementById('profile-status'); button.disabled = true; status.textContent = 'Saving…';
     const body = {}; ['firstName','surname','email','dateOfBirth','address','schoolYear','parentName','parentEmail'].forEach(function (key) { body[key] = profileForm.elements[key].value.trim(); });
     try { const result = await request('/api/account', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); setFormValues(profileForm, result.profile); status.textContent = 'Profile saved.'; status.classList.add('success'); }
+    catch (error) { status.textContent = error.message; status.classList.remove('success'); }
+    finally { button.disabled = false; }
+  });
+  document.getElementById('admin-email-form').addEventListener('submit', async function (event) {
+    event.preventDefault(); const form = event.currentTarget; const status = document.getElementById('admin-email-status'); const button = form.querySelector('button'); button.disabled = true; status.textContent = 'Updating…';
+    try { const result = await request('/api/account/email', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: form.elements.email.value.trim(), currentPassword: form.elements.currentPassword.value }) }); profileForm.elements.email.value = result.email; form.reset(); status.textContent = 'Administrator email updated. Use it for future password resets.'; status.classList.add('success'); }
     catch (error) { status.textContent = error.message; status.classList.remove('success'); }
     finally { button.disabled = false; }
   });

@@ -32,6 +32,7 @@
         });
         document.getElementById('no-workbooks-message').classList.toggle('hidden', allowedWorkbooks.size > 0);
         document.getElementById('btn-admin-users').classList.toggle('hidden', !payload.user || payload.user.role !== 'admin');
+        document.getElementById('btn-parent-portal').classList.toggle('hidden', !payload.user || payload.user.accountType !== 'parent');
         loginStatus.textContent = '';
       }
 

@@ -17,6 +17,7 @@ const PASSWORD_BYTES = 64;
 const SESSION_COOKIE = process.env.NODE_ENV === 'production' ? '__Host-math_academy_session' : 'math_academy_session';
 const ADMIN_FILES = new Set(['/admin.html', '/admin.js', '/admin.css']);
 const ACCOUNT_FILES = new Map([['/account.html', 'account.html'], ['/account.js', 'assets/js/account.js']]);
+const PARENT_FILES = new Map([['/parent.html', 'parent.html'], ['/parent.js', 'assets/js/parent.js']]);
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.ico': 'image/x-icon'
@@ -68,7 +69,7 @@ async function passwordMatches(password, user) {
 }
 
 function publicUser(user) {
-  return { id: user.id, username: user.username, role: user.role, active: user.active, entitlements: [...user.entitlements] };
+  return { id: user.id, username: user.username, role: user.role, accountType: user.role === 'admin' ? 'admin' : (user.accountType || 'learner'), active: user.active, entitlements: [...user.entitlements] };
 }
 
 function adminUser(user) {
@@ -80,8 +81,14 @@ function adminUser(user) {
 }
 
 function accountProfile(user) {
-  return { id: user.id, username: user.username, role: user.role, firstName: user.firstName || '', surname: user.surname || '', email: user.email || '',
+  return { id: user.id, username: user.username, role: user.role, accountType: user.role === 'admin' ? 'admin' : (user.accountType || 'learner'), firstName: user.firstName || '', surname: user.surname || '', email: user.email || '',
     dateOfBirth: user.dateOfBirth || '', address: user.address || '', schoolYear: user.schoolYear || '', parentName: user.parentName || '', parentEmail: user.parentEmail || '' };
+}
+
+function parentChild(user) {
+  return { id: user.id, username: user.username, firstName: user.firstName || '', surname: user.surname || '', dateOfBirth: user.dateOfBirth || '',
+    schoolYear: user.schoolYear || '', approvalStatus: user.approvalStatus || 'approved', enabled: user.parentEnabled !== false,
+    entitlements: [...(user.entitlements || [])], requestedEntitlements: [...(user.requestedEntitlements || [])] };
 }
 
 function localEmailEnv() { return { RESEND_API_KEY: process.env.RESEND_API_KEY, RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL }; }
@@ -199,13 +206,15 @@ function workbooksForPath(urlPath) {
 
 function resolveStaticPath(urlPath) {
   if (urlPath === '/' || urlPath === '/index.html') return 'index.html';
-  if (['/register.html', '/forgot-password.html', '/reset-password.html'].includes(urlPath)) return urlPath.slice(1);
+  if (['/register.html', '/parent-register.html', '/parent.html', '/forgot-password.html', '/reset-password.html'].includes(urlPath)) return urlPath.slice(1);
   if (urlPath === '/assets/css/site.css') return 'assets/css/site.css';
   if (urlPath === '/assets/css/access.css') return 'assets/css/access.css';
+  if (urlPath === '/assets/css/parent.css') return 'assets/css/parent.css';
   if (urlPath === '/assets/css/interactive-workbook.css') return 'assets/css/interactive-workbook.css';
   if (urlPath === '/assets/css/curriculum-workbook.css') return 'assets/css/curriculum-workbook.css';
   if (urlPath === '/assets/js/site.js') return 'assets/js/site.js';
-  if (['/assets/js/register.js', '/assets/js/forgot-password.js', '/assets/js/reset-password.js'].includes(urlPath)) return urlPath.slice(1);
+  if (['/assets/js/register.js', '/assets/js/parent-register.js', '/assets/js/forgot-password.js', '/assets/js/reset-password.js'].includes(urlPath)) return urlPath.slice(1);
+  if (urlPath === '/parent.js') return 'assets/js/parent.js';
   if (urlPath === '/assets/favicon.svg') return 'assets/favicon.svg';
   if (urlPath === '/admin.js') return 'assets/js/admin.js';
   if (urlPath === '/admin.css') return 'assets/css/admin.css';
@@ -228,10 +237,10 @@ async function handleApi(req, res, urlPath) {
     const passwordFields = await makePassword(body.password);
     if (users.some((user) => user.username.toLowerCase() === username.toLowerCase() || (user.email || '').toLowerCase() === email)) return sendJson(res, 409, { error: 'That username or email address is already registered.' });
     const created = {
-      id: crypto.randomUUID(), username, role: 'student', active: false, approvalStatus: 'pending', entitlements: [],
+      id: crypto.randomUUID(), username, role: 'student', accountType: 'learner', active: false, approvalStatus: 'pending', entitlements: [],
       requestedEntitlements: [...new Set(body.requestedEntitlements)], firstName: body.firstName.trim(), surname: body.surname.trim(),
       email, dateOfBirth: body.dateOfBirth, address: body.address.trim(), schoolYear: body.schoolYear,
-      parentName: body.parentName?.trim() || '', parentEmail: body.parentEmail?.trim().toLowerCase() || '',
+      parentName: body.parentName?.trim() || '', parentEmail: body.parentEmail?.trim().toLowerCase() || '', parentEnabled: true, adminEnabled: true,
       ...passwordFields, createdAt: new Date().toISOString()
     };
     users.push(created); saveUsers();
@@ -241,6 +250,27 @@ async function handleApi(req, res, urlPath) {
       users = users.filter((user) => user.id !== created.id); saveUsers();
       return sendJson(res, 503, { error: error.message });
     }
+    return sendJson(res, 201, { ok: true });
+  }
+
+  if (req.method === 'POST' && urlPath === '/api/auth/register-parent') {
+    let body;
+    try { body = await readJson(req); } catch (error) { return sendJson(res, 400, { error: error.message }); }
+    const invalid = accountSupport.validateParentRegistration(body);
+    if (invalid) return sendJson(res, 400, { error: invalid });
+    if (body.privacyAcknowledged !== true) return sendJson(res, 400, { error: 'Please acknowledge the privacy notice before submitting.' });
+    const ip = req.socket.remoteAddress || 'unknown'; const key = `parent-register:${ip}`; const attempt = currentAttemptState(key); attempt.count += 1; loginAttempts.set(key, attempt);
+    if (attempt.count > 5) return sendJson(res, 429, { error: 'Too many registration attempts. Please try again later.' });
+    const username = body.username.trim(); const email = body.email.trim().toLowerCase();
+    if (users.some((user) => user.username.toLowerCase() === username.toLowerCase() || (user.email || '').toLowerCase() === email)) return sendJson(res, 409, { error: 'That username or email address is already registered.' });
+    const passwordFields = await makePassword(body.password);
+    if (users.some((user) => user.username.toLowerCase() === username.toLowerCase() || (user.email || '').toLowerCase() === email)) return sendJson(res, 409, { error: 'That username or email address is already registered.' });
+    const parent = { id: crypto.randomUUID(), username, role: 'student', accountType: 'parent', parentId: null, active: false, approvalStatus: 'pending', entitlements: [], requestedEntitlements: [], parentEnabled: true, adminEnabled: true,
+      firstName: body.firstName.trim(), surname: body.surname.trim(), email, dateOfBirth: body.dateOfBirth, address: body.address.trim(), schoolYear: '', parentName: '', parentEmail: '',
+      ...passwordFields, createdAt: new Date().toISOString() };
+    users.push(parent); saveUsers();
+    try { await accountSupport.sendEmail(localEmailEnv(), email, accountSupport.notificationEmail('parent-pending', parent), `parent-registration-${parent.id}-${email}`); }
+    catch (error) { users = users.filter((user) => user.id !== parent.id); saveUsers(); return sendJson(res, 503, { error: error.message }); }
     return sendJson(res, 201, { ok: true });
   }
 
@@ -288,16 +318,26 @@ async function handleApi(req, res, urlPath) {
     try { body = await readJson(req); } catch (error) { return sendJson(res, 400, { error: error.message }); }
     if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res, 400, { error: 'Profile details are invalid.' });
     const age = accountSupport.ageOnDate(body.dateOfBirth);
-    if (['firstName','surname','address','schoolYear'].some((key) => typeof body[key] !== 'string' || !body[key].trim()) || body.firstName.length > 80 || body.surname.length > 80 || body.address.length > 500) return sendJson(res, 400, { error: 'Complete all required profile fields.' });
+    if (['firstName','surname','address'].some((key) => typeof body[key] !== 'string' || !body[key].trim()) || body.firstName.length > 80 || body.surname.length > 80 || body.address.length > 500) return sendJson(res, 400, { error: 'Complete all required profile fields.' });
     if (!accountSupport.validEmail(body.email)) return sendJson(res, 400, { error: 'Enter a valid email address.' });
-    if (!accountSupport.SCHOOL_YEARS.includes(body.schoolYear)) return sendJson(res, 400, { error: 'Choose a valid school year.' });
+    if (accountAuth.user.accountType !== 'parent' && !accountSupport.SCHOOL_YEARS.includes(body.schoolYear)) return sendJson(res, 400, { error: 'Choose a valid school year.' });
     if (age === null) return sendJson(res, 400, { error: 'Enter a valid date of birth that is not in the future.' });
     if (age < 18 && (!body.parentName?.trim() || body.parentName.trim().length > 160 || !accountSupport.validEmail(body.parentEmail))) return sendJson(res, 400, { error: 'A parent or guardian name and email are required for applicants under 18.' });
     const email = body.email.trim().toLowerCase();
     if (email !== (accountAuth.user.email || '').toLowerCase() || (body.parentEmail?.trim().toLowerCase() || '') !== (accountAuth.user.parentEmail || '').toLowerCase()) return sendJson(res, 400, { error: 'Email addresses cannot be changed from this page. Contact an administrator to update them.' });
     if (users.some((item) => item.id !== accountAuth.user.id && (item.email || '').toLowerCase() === email)) return sendJson(res, 409, { error: 'That email address is already used by another account.' });
-    Object.assign(accountAuth.user, { firstName: body.firstName.trim(), surname: body.surname.trim(), email, dateOfBirth: body.dateOfBirth, address: body.address.trim(), schoolYear: body.schoolYear, parentName: body.parentName?.trim() || '', parentEmail: body.parentEmail?.trim().toLowerCase() || '' });
+    Object.assign(accountAuth.user, { firstName: body.firstName.trim(), surname: body.surname.trim(), email, dateOfBirth: body.dateOfBirth, address: body.address.trim(), schoolYear: body.schoolYear || '', parentName: body.parentName?.trim() || '', parentEmail: body.parentEmail?.trim().toLowerCase() || '' });
     saveUsers(); return sendJson(res, 200, { profile: accountProfile(accountAuth.user) });
+  }
+  if (req.method === 'POST' && urlPath === '/api/account/email') {
+    if (!accountAuth || accountAuth.user.role !== 'admin') return sendJson(res, 403, { error: 'Administrator access is required to change this email address.' });
+    let body;
+    try { body = await readJson(req); } catch (error) { return sendJson(res, 400, { error: error.message }); }
+    if (!body || typeof body !== 'object' || !accountSupport.validEmail(body.email) || typeof body.currentPassword !== 'string') return sendJson(res, 400, { error: 'Enter a valid email address and your current password.' });
+    if (!await passwordMatches(body.currentPassword, accountAuth.user)) return sendJson(res, 400, { error: 'Current password is incorrect.' });
+    const email = body.email.trim().toLowerCase();
+    if (users.some((item) => item.id !== accountAuth.user.id && (item.email || '').toLowerCase() === email)) return sendJson(res, 409, { error: 'That email address is already used by another account.' });
+    accountAuth.user.email = email; saveUsers(); return sendJson(res, 200, { ok: true, email });
   }
   if (req.method === 'POST' && urlPath === '/api/account/password') {
     if (!accountAuth) return sendJson(res, 401, { error: 'Sign in is required.' });
@@ -309,6 +349,67 @@ async function handleApi(req, res, urlPath) {
     Object.assign(accountAuth.user, await makePassword(body.newPassword));
     for (const [token, session] of sessions) if (session.userId === accountAuth.user.id && token !== accountAuth.token) sessions.delete(token);
     saveUsers(); return sendJson(res, 200, { ok: true });
+  }
+
+  if (urlPath.startsWith('/api/parent/')) {
+    const auth = getSession(req);
+    if (!auth || auth.user.accountType !== 'parent') return sendJson(res, 403, { error: 'Approved parent or guardian access is required.' });
+    if (req.method === 'GET' && urlPath === '/api/parent/children') {
+      return sendJson(res, 200, { children: users.filter((user) => user.accountType === 'child' && user.parentId === auth.user.id).map(parentChild) });
+    }
+    if (req.method === 'POST' && urlPath === '/api/parent/children') {
+      let body;
+      try { body = await readJson(req); } catch (error) { return sendJson(res, 400, { error: error.message }); }
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res, 400, { error: 'Child details are invalid.' });
+      if (typeof body.firstName !== 'string' || !body.firstName.trim() || body.firstName.trim().length > 80 || typeof body.surname !== 'string' || !body.surname.trim() || body.surname.trim().length > 80) return sendJson(res, 400, { error: 'Enter the child’s first name and surname.' });
+      const age = accountSupport.ageOnDate(body.dateOfBirth);
+      if (age === null || age >= 18) return sendJson(res, 400, { error: 'A child account must have a valid date of birth for someone under 18.' });
+      if (!accountSupport.SCHOOL_YEARS.slice(0, 8).includes(body.schoolYear)) return sendJson(res, 400, { error: 'Choose a school year from Year 6 to Year 13.' });
+      const username = String(body.username || '').trim();
+      if (!validUsername(username)) return sendJson(res, 400, { error: 'Username must be 3-32 characters using letters, numbers, dots, underscores or hyphens.' });
+      if (!validPassword(body.password)) return sendJson(res, 400, { error: 'Password must be at least 12 characters.' });
+      if (!isAllowedEntitlementList(body.requestedEntitlements) || !body.requestedEntitlements.length) return sendJson(res, 400, { error: 'Choose at least one workbook access request.' });
+      if (users.some((user) => user.username.toLowerCase() === username.toLowerCase())) return sendJson(res, 409, { error: 'That username is already registered.' });
+      const passwordFields = await makePassword(body.password);
+      if (users.some((user) => user.username.toLowerCase() === username.toLowerCase())) return sendJson(res, 409, { error: 'That username is already registered.' });
+      const child = { id: crypto.randomUUID(), username, role: 'student', accountType: 'child', parentId: auth.user.id, active: false, parentEnabled: true, adminEnabled: true, approvalStatus: 'pending',
+        entitlements: [], requestedEntitlements: [...new Set(body.requestedEntitlements)], firstName: body.firstName.trim(), surname: body.surname.trim(),
+        dateOfBirth: body.dateOfBirth, address: auth.user.address || '', schoolYear: body.schoolYear, email: '', parentName: `${auth.user.firstName} ${auth.user.surname}`.trim(), parentEmail: auth.user.email || '',
+        ...passwordFields, createdAt: new Date().toISOString() };
+      users.push(child); saveUsers(); return sendJson(res, 201, { child: parentChild(child) });
+    }
+    const childMatch = urlPath.match(/^\/api\/parent\/children\/([0-9a-f-]+)$/i);
+    if (childMatch && req.method === 'PATCH') {
+      let body;
+      try { body = await readJson(req); } catch (error) { return sendJson(res, 400, { error: error.message }); }
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res, 400, { error: 'Child details are invalid.' });
+      const child = users.find((user) => user.id === childMatch[1] && user.parentId === auth.user.id && user.accountType === 'child');
+      if (!child) return sendJson(res, 404, { error: 'Child account not found.' });
+      const firstName = body.firstName === undefined ? child.firstName : String(body.firstName).trim(); const surname = body.surname === undefined ? child.surname : String(body.surname).trim();
+      const dateOfBirth = body.dateOfBirth === undefined ? child.dateOfBirth : body.dateOfBirth; const schoolYear = body.schoolYear === undefined ? child.schoolYear : body.schoolYear;
+      const requested = body.requestedEntitlements === undefined ? child.requestedEntitlements : body.requestedEntitlements; let enabled = child.parentEnabled !== false;
+      if (body.enabled !== undefined) { if (typeof body.enabled !== 'boolean') return sendJson(res, 400, { error: 'Child account enablement must be true or false.' }); enabled = body.enabled; }
+      if (!firstName || firstName.length > 80 || !surname || surname.length > 80) return sendJson(res, 400, { error: 'Enter the child’s first name and surname.' });
+      const age = accountSupport.ageOnDate(dateOfBirth); if (age === null || age >= 18) return sendJson(res, 400, { error: 'A child account must have a valid date of birth for someone under 18.' });
+      if (!accountSupport.SCHOOL_YEARS.slice(0, 8).includes(schoolYear) || !isAllowedEntitlementList(requested)) return sendJson(res, 400, { error: 'Choose a valid school year and valid workbook requests.' });
+      child.firstName = firstName; child.surname = surname; child.dateOfBirth = dateOfBirth; child.schoolYear = schoolYear; child.requestedEntitlements = [...new Set(requested)]; child.parentEnabled = enabled;
+      child.active = Boolean(enabled && child.adminEnabled !== false && child.approvalStatus === 'approved'); saveUsers(); return sendJson(res, 200, { child: parentChild(child) });
+    }
+    if (childMatch && req.method === 'DELETE') {
+      const child = users.find((user) => user.id === childMatch[1] && user.parentId === auth.user.id && user.accountType === 'child');
+      if (!child) return sendJson(res, 404, { error: 'Child account not found.' });
+      users = users.filter((user) => user.id !== child.id); for (const [token, session] of sessions) if (session.userId === child.id) sessions.delete(token); saveUsers(); return sendJson(res, 200, { ok: true });
+    }
+    const childPassword = urlPath.match(/^\/api\/parent\/children\/([0-9a-f-]+)\/password$/i);
+    if (childPassword && req.method === 'POST') {
+      let body;
+      try { body = await readJson(req); } catch (error) { return sendJson(res, 400, { error: error.message }); }
+      if (!body || !validPassword(body.password)) return sendJson(res, 400, { error: 'Password must be at least 12 characters.' });
+      const child = users.find((user) => user.id === childPassword[1] && user.parentId === auth.user.id && user.accountType === 'child');
+      if (!child) return sendJson(res, 404, { error: 'Child account not found.' });
+      Object.assign(child, await makePassword(body.password)); for (const [token, session] of sessions) if (session.userId === child.id) sessions.delete(token); saveUsers(); return sendJson(res, 200, { ok: true });
+    }
+    return sendJson(res, 404, { error: 'Parent endpoint not found.' });
   }
 
   if (req.method === 'GET' && urlPath === '/api/auth/me') {
@@ -369,10 +470,11 @@ async function handleApi(req, res, urlPath) {
     if (req.method === 'POST' && approveMatch) {
       let body;
       try { body = await readJson(req); } catch (error) { return sendJson(res, 400, { error: error.message }); }
-      if (!body || typeof body !== 'object' || !isAllowedEntitlementList(body.entitlements) || !body.entitlements.length) return sendJson(res, 400, { error: 'Select at least one workbook to grant.' });
+      if (!body || typeof body !== 'object' || !isAllowedEntitlementList(body.entitlements)) return sendJson(res, 400, { error: 'Select valid workbook access.' });
       const target = users.find((user) => user.id === approveMatch[1] && user.approvalStatus === 'pending' && user.role === 'student');
       if (!target) return sendJson(res, 409, { error: 'This registration is no longer pending.' });
-      target.active = true; target.approvalStatus = 'approved'; target.entitlements = [...new Set(body.entitlements)]; saveUsers();
+      if (target.accountType !== 'parent' && !body.entitlements.length) return sendJson(res, 400, { error: 'Select at least one workbook to grant.' });
+      target.approvalStatus = 'approved'; target.entitlements = [...new Set(body.entitlements)]; target.active = target.parentEnabled !== false && target.adminEnabled !== false; saveUsers();
       const appUrl = process.env.PUBLIC_APP_URL || `http://${req.headers.host || 'localhost:3000'}`;
       try { await accountSupport.sendToApplicantAndGuardian(localEmailEnv(), target, accountSupport.notificationEmail('approved', target, appUrl), `approval-${target.id}`); }
       catch (error) { return sendJson(res, 502, { error: `Access was approved, but the notification could not be sent. Use Send approval email to retry. ${error.message}` }); }
@@ -402,18 +504,30 @@ async function handleApi(req, res, urlPath) {
       catch (error) { return sendJson(res, 400, { error: error.message }); }
       if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res, 400, { error: 'Request body must be an object.' });
       const username = String(body.username || '').trim();
+      const role = body.role === undefined ? 'student' : body.role;
+      if (!['student', 'admin'].includes(role)) return sendJson(res, 400, { error: 'Choose either student or administrator.' });
       if (!validUsername(username)) return sendJson(res, 400, { error: 'Username must be 3–32 characters using letters, numbers, dots, underscores or hyphens.' });
       if (!validPassword(body.password)) return sendJson(res, 400, { error: 'Password must be at least 12 characters.' });
       if (users.some((item) => item.username.toLowerCase() === username.toLowerCase())) return sendJson(res, 409, { error: 'That username already exists.' });
       if (!isAllowedEntitlementList(body.entitlements || [])) return sendJson(res, 400, { error: 'One or more workbook entitlements are invalid.' });
       const passwordFields = await makePassword(body.password);
       if (users.some((item) => item.username.toLowerCase() === username.toLowerCase())) return sendJson(res, 409, { error: 'That username already exists.' });
-      const created = { id: crypto.randomUUID(), username, role: 'student', active: true, entitlements: [...new Set(body.entitlements || [])], ...passwordFields, createdAt: new Date().toISOString() };
+      const created = { id: crypto.randomUUID(), username, role, accountType: role === 'admin' ? 'admin' : 'learner', active: true, adminEnabled: true, parentEnabled: true, approvalStatus: 'approved', entitlements: role === 'admin' ? Object.keys(WORKBOOKS) : [...new Set(body.entitlements || [])], requestedEntitlements: [], ...passwordFields, createdAt: new Date().toISOString() };
       users.push(created); saveUsers();
       return sendJson(res, 201, { user: publicUser(created) });
     }
 
     const match = urlPath.match(/^\/api\/admin\/users\/([0-9a-f-]+)$/i);
+    if (req.method === 'DELETE' && match) {
+      const target = users.find((user) => user.id === match[1]);
+      if (!target) return sendJson(res, 404, { error: 'User not found.' });
+      if (target.role === 'admin' && target.active && users.filter((user) => user.role === 'admin' && user.active).length < 2) return sendJson(res, 400, { error: 'Keep at least one active administrator.' });
+      const deletedIds = new Set([target.id]);
+      if (target.accountType === 'parent') users.filter((user) => user.parentId === target.id).forEach((user) => deletedIds.add(user.id));
+      users = users.filter((user) => !deletedIds.has(user.id));
+      for (const [token, session] of sessions) if (deletedIds.has(session.userId)) sessions.delete(token);
+      saveUsers(); return sendJson(res, 200, { ok: true });
+    }
     if (req.method === 'PATCH' && match) {
       let body;
       try { body = await readJson(req); }
@@ -437,7 +551,8 @@ async function handleApi(req, res, urlPath) {
       if (body.email !== undefined) target.email = body.email.trim().toLowerCase();
       if (body.entitlements !== undefined) target.entitlements = [...new Set(body.entitlements)];
       if (body.active !== undefined) {
-        target.active = body.active;
+        target.adminEnabled = body.active;
+        target.active = Boolean(body.active && target.parentEnabled !== false && (target.approvalStatus || 'approved') === 'approved');
         if (!target.active) for (const [token, session] of sessions) if (session.userId === target.id) sessions.delete(token);
       }
       saveUsers();
@@ -475,7 +590,13 @@ async function main() {
     saveUsers();
   }
   if (!Array.isArray(users)) throw new Error('User store is invalid.');
-  users.forEach((user) => { if (!user.approvalStatus) user.approvalStatus = 'approved'; if (!Array.isArray(user.requestedEntitlements)) user.requestedEntitlements = []; });
+  users.forEach((user) => {
+    if (!user.approvalStatus) user.approvalStatus = 'approved';
+    if (!Array.isArray(user.requestedEntitlements)) user.requestedEntitlements = [];
+    if (!user.accountType) user.accountType = user.role === 'admin' ? 'admin' : 'learner';
+    if (user.parentEnabled === undefined) user.parentEnabled = true;
+    if (user.adminEnabled === undefined) user.adminEnabled = user.approvalStatus === 'pending' ? true : Boolean(user.active);
+  });
 
   const bootstrapUsername = process.env.BOOTSTRAP_ADMIN_USERNAME;
   const bootstrapPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD;
@@ -516,6 +637,12 @@ async function main() {
     if (ACCOUNT_FILES.has(urlPath)) {
       if (!auth) { res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }); res.end('Sign in is required.'); return; }
       return serveFile(res, ACCOUNT_FILES.get(urlPath), 'no-store');
+    }
+
+    if (PARENT_FILES.has(urlPath)) {
+      if (!auth) { res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }); res.end('Sign in is required.'); return; }
+      if (auth.user.accountType !== 'parent') { res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }); res.end('Parent or guardian access is required.'); return; }
+      return serveFile(res, PARENT_FILES.get(urlPath), 'no-store');
     }
 
     const matchingWorkbooks = workbooksForPath(urlPath);

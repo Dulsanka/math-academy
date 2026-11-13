@@ -33,6 +33,18 @@ export function validateRegistration(body, workbooks) {
   return null;
 }
 
+export function validateParentRegistration(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return 'Please complete the parent registration form.';
+  if (['firstName', 'surname', 'address', 'username'].some((key) => typeof body[key] !== 'string' || !body[key].trim())) return 'Complete all required fields.';
+  if (body.firstName.trim().length > 80 || body.surname.trim().length > 80 || body.address.trim().length > 500) return 'Some profile fields are too long.';
+  if (!validEmail(body.email)) return 'Enter a valid email address.';
+  if (!/^[a-zA-Z0-9._-]{3,32}$/.test(body.username.trim())) return 'Username must be 3-32 characters using letters, numbers, dots, underscores or hyphens.';
+  if (typeof body.password !== 'string' || body.password.length < 12 || body.password.length > 256) return 'Choose a password with at least 12 characters.';
+  const age = ageOnDate(body.dateOfBirth);
+  if (age === null || age < 18) return 'Parent or guardian accounts must be registered by an adult aged 18 or over.';
+  return null;
+}
+
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 }
@@ -44,6 +56,9 @@ export function notificationEmail(kind, profile, detail = '') {
   if (kind === 'pending') {
     subject = 'Math Academy registration received';
     message = `<p>Hi ${name},</p><p>We received your NZ Mathematics Academy registration. Your requested workbook access is pending administrator review. We will email you again when a decision has been made.</p><p>If you are under 18, your parent or guardian will also receive an email when access is approved.</p>`;
+  } else if (kind === 'parent-pending') {
+    subject = 'Parent account request received';
+    message = `<p>Hi ${name},</p><p>We received your parent or guardian account request. An administrator must approve the account before you can add or manage child profiles.</p><p>Administrators separately approve all workbook access requests made for children.</p>`;
   } else if (kind === 'approved') {
     subject = 'Your Math Academy access has been approved';
     message = `<p>Congratulations, ${name}! Your NZ Mathematics Academy account has been approved.</p><p>You can now sign in at <a href="${escapeHtml(detail)}">Math Academy</a> with the username you registered.</p>`;

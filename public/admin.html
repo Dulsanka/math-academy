@@ -26,6 +26,15 @@
         <button type="submit">Create account</button>
       </form>
     </section>
+    <section class="panel administrator-panel">
+      <h2>Add an administrator</h2>
+      <p>Administrator accounts can manage users, approve parents and children, and grant workbook access. Use a unique username and a temporary password of at least 12 characters.</p>
+      <form id="create-admin-form" class="create-form" method="post">
+        <label>Username<input name="username" required minlength="3" maxlength="32" autocomplete="off" /></label>
+        <label>Temporary password<input name="password" type="password" required minlength="12" autocomplete="new-password" /></label>
+        <button type="submit">Create administrator</button>
+      </form>
+    </section>
     <section class="panel">
       <div class="section-head"><div><h2>Accounts</h2><p>Changes take effect on the user’s next request.</p></div><button id="refresh-users" class="secondary" type="button">Refresh</button></div>
       <div id="users-list" class="users-list"></div>
