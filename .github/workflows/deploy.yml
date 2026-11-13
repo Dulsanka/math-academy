@@ -17,13 +17,19 @@ jobs:
 
       - name: Confirm automated test suite is present
         run: |
+          test -f package.json
+          test -f docs/TESTING.md
           test -f tests/account-support.test.mjs
           test -f tests/local-access.e2e.test.mjs
           test -f tests/markup.test.mjs
+          test -f tests/accessibility-compatibility.test.mjs
           test -f tests/workbooks.test.mjs
 
-      - name: Run automated unit, markup, and local access tests
-        run: node --test
+      - name: Check JavaScript syntax
+        run: npm run check:syntax
+
+      - name: Run automated unit, integration, system, and end-to-end tests
+        run: npm test
 
       - name: Apply database migrations
         uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3

@@ -1,5 +1,5 @@
 import WORKBOOKS from './workbooks.mjs';
-import { SCHOOL_YEARS, ageOnDate, sendEmail, sendToApplicantAndGuardian, notificationEmail, validateParentRegistration, normalizeProgressSummary, validEmail } from './account-support.mjs';
+import { SCHOOL_YEARS, ageOnDate, sendEmail, sendToApplicantAndGuardian, notificationEmail, validateParentRegistration, normalizeProgressSummary, validEmail, accountSetupLinkExpiry } from './account-support.mjs';
 
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
@@ -161,9 +161,7 @@ async function derivePassword(password, saltHex) {
 
 async function sendAccountInvitation(env, user, appUrl) {
   const now = Date.now();
-  const isAdministrator = user.role === 'admin' || user.account_type === 'admin' || user.accountType === 'admin';
-  const expiresInMs = isAdministrator ? 24 * 60 * 60 * 1000 : 30 * 60 * 1000;
-  const expiryLabel = isAdministrator ? '24 hours' : '30 minutes';
+  const { expiresInMs, label: expiryLabel } = accountSetupLinkExpiry(user);
   const token = randomHex(32);
   const tokenHash = await digestHex(token);
   await env.DB.batch([

@@ -4,6 +4,14 @@ export function validEmail(value) {
   return typeof value === 'string' && value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
+export function accountSetupLinkExpiry(profile = {}) {
+  const administrator = profile.role === 'admin' || profile.accountType === 'admin' || profile.account_type === 'admin';
+  return Object.freeze({
+    expiresInMs: administrator ? 24 * 60 * 60 * 1000 : 30 * 60 * 1000,
+    label: administrator ? '24 hours' : '30 minutes'
+  });
+}
+
 export function ageOnDate(isoDate, today = new Date()) {
   if (typeof isoDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(isoDate)) return null;
   const [year, month, day] = isoDate.split('-').map(Number);

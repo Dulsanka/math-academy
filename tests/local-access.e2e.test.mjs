@@ -149,7 +149,12 @@ test('end-to-end access, entitlements, administrator actions, and session lifecy
   assert.equal((await request('/6_year6_nz_mathematics_workbook.html', { cookie: approvedParent.cookie })).status, 200, 'an administrator can grant workbook access to the parent account');
   const adminMe = await request('/api/auth/me', { cookie: adminLogin.cookie });
   assert.equal((await adminMe.json()).user.role, 'admin');
-  assert.equal((await request('/admin.html', { cookie: adminLogin.cookie })).status, 200);
+  const adminPage = await request('/admin.html', { cookie: adminLogin.cookie });
+  assert.equal(adminPage.status, 200);
+  const adminMarkup = await adminPage.text();
+  assert.match(adminMarkup, /id="admin-sign-out"/);
+  assert.match(adminMarkup, /data-admin-page="accounts"/);
+  assert.doesNotMatch(adminMarkup, /Learning progress/);
   assert.equal((await request('/account.html', { cookie: adminLogin.cookie })).status, 200);
   assert.match(await (await request('/account.html', { cookie: adminLogin.cookie })).text(), /src="\/account\.js"/);
   assert.match(await (await request('/account.js', { cookie: adminLogin.cookie })).text(), /adminEmailPassword/);
@@ -169,8 +174,13 @@ test('end-to-end access, entitlements, administrator actions, and session lifecy
   assert.equal(adminCreatedParentLogin.response.status, 200);
   const parentLogin = await signIn(PARENT_NAME, PARENT_PASSWORD);
   assert.equal(parentLogin.response.status, 200);
-  assert.equal((await request('/parent.html', { cookie: parentLogin.cookie })).status, 200);
-  assert.match(await (await request('/parent.html', { cookie: parentLogin.cookie })).text(), /src="\/parent\.js"/);
+  const parentPage = await request('/parent.html', { cookie: parentLogin.cookie });
+  assert.equal(parentPage.status, 200);
+  const parentMarkup = await parentPage.text();
+  assert.match(parentMarkup, /data-parent-page="dashboard"/);
+  assert.match(parentMarkup, /data-parent-page="children"/);
+  assert.match(parentMarkup, /data-parent-page="add-child"/);
+  assert.match(parentMarkup, /src="\/parent\.js"/);
   assert.equal((await request('/parent.js', { cookie: parentLogin.cookie })).status, 200);
   const childCreated = await request('/api/parent/children', { method: 'POST', cookie: parentLogin.cookie, body: {
     firstName: 'Test', surname: 'Child', dateOfBirth: '2015-05-10', schoolYear: 'Year 6', username: 'qa_child',
@@ -184,6 +194,7 @@ test('end-to-end access, entitlements, administrator actions, and session lifecy
   assert.equal(pendingChildLogin.response.status, 200, 'child can sign in with their own credentials immediately after registration');
   assert.equal((await request('/6_year6_nz_mathematics_workbook.html', { cookie: pendingChildLogin.cookie })).status, 403, 'requested workbooks stay locked until admin approval');
   assert.equal((await request('/api/parent/dashboard', { cookie: pendingChildLogin.cookie })).status, 403, 'a child cannot open a parent dashboard');
+  assert.equal((await request('/parent.html', { cookie: pendingChildLogin.cookie })).status, 403, 'a child cannot open parent portal pages');
   assert.equal((await request('/api/parent/children/' + child.id, { method: 'PATCH', cookie: parentLogin.cookie, body: { requestedEntitlements: ['year6', 'year7'], enabled: true } })).status, 200);
   const pendingChild = (await (await request('/api/admin/users', { cookie: adminLogin.cookie })).json()).users.find(user => user.id === child.id);
   assert.ok(pendingChild);

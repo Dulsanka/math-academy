@@ -109,9 +109,7 @@ function localEmailEnv() {
 }
 
 async function sendAccountInvitation(user, appUrl) {
-  const isAdministrator = user.role === 'admin' || user.accountType === 'admin';
-  const expiresInMs = isAdministrator ? 24 * 60 * 60 * 1000 : 30 * 60 * 1000;
-  const expiryLabel = isAdministrator ? '24 hours' : '30 minutes';
+  const { expiresInMs, label: expiryLabel } = accountSupport.accountSetupLinkExpiry(user);
   const token = crypto.randomBytes(32).toString('hex');
   user.resetTokenHash = crypto.createHash('sha256').update(token).digest('hex');
   user.resetExpiresAt = Date.now() + expiresInMs;

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import WORKBOOKS from '../src/workbooks.mjs';
-import { ageOnDate, notificationEmail, normalizeProgressSummary, sendToApplicantAndGuardian, validateParentRegistration, validateRegistration } from '../src/account-support.mjs';
+import { accountSetupLinkExpiry, ageOnDate, notificationEmail, normalizeProgressSummary, sendToApplicantAndGuardian, validateParentRegistration, validateRegistration } from '../src/account-support.mjs';
 
 const application = {
   firstName: 'Aroha', surname: 'Learner', email: 'aroha@example.test', dateOfBirth: '2012-05-02', address: '1 Learning Road',
@@ -29,6 +29,12 @@ test('notification templates escape user data and provide expected destinations'
   assert.match(parentApproval.html, /Parent Portal/);
   const childApproval = notificationEmail('approved', { account_type: 'child', firstName: 'Ari' }, 'https://example.test/');
   assert.match(childApproval.text, /workbook access are approved/);
+});
+
+test('account setup links use role-specific expiry and explain it in onboarding mail', () => {
+  assert.deepEqual(accountSetupLinkExpiry({ role: 'admin' }), { expiresInMs: 24 * 60 * 60 * 1000, label: '24 hours' });
+  assert.deepEqual(accountSetupLinkExpiry({ accountType: 'parent' }), { expiresInMs: 30 * 60 * 1000, label: '30 minutes' });
+  assert.match(notificationEmail('account-password-setup', { role: 'admin', setupExpiryLabel: '24 hours' }, 'https://example.test/reset').text, /expires in 24 hours/);
 });
 
 test('approval mail delivery fails clearly when an account has no recipient address', async () => {

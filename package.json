@@ -1,0 +1,21 @@
+{
+  "name": "nz-mathematics-master-academy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Interactive New Zealand mathematics workbooks and family access portal",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "check:syntax": "node scripts/check-syntax.mjs",
+    "test": "node --test",
+    "test:unit": "node --test tests/account-support.test.mjs tests/workbooks.test.mjs",
+    "test:integration": "node --test tests/local-access.e2e.test.mjs",
+    "test:system": "node --test tests/markup.test.mjs tests/accessibility-compatibility.test.mjs",
+    "test:e2e": "node --test tests/local-access.e2e.test.mjs",
+    "test:compatibility-accessibility": "node --test tests/accessibility-compatibility.test.mjs",
+    "test:load": "node scripts/load.mjs",
+    "check": "npm run check:syntax && npm test"
+  }
+}

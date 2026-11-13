@@ -34,6 +34,10 @@ The familiar workbook URLs remain the public routes. The Worker checks each rout
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for request flow and the steps for adding another curriculum year.
 
+## Development checks
+
+The project has no install-time dependencies. With Node.js 20 or later, run `npm run check` before committing. In PowerShell, use `npm.cmd` if script policy blocks `npm.ps1`. Use `npm run test:unit`, `npm run test:integration`, `npm run test:system`, `npm run test:e2e`, or `npm run test:compatibility-accessibility` to run a stage on its own. `npm run test:load` starts an isolated local server and reports response latency and throughput. Browser/device compatibility, assistive-technology review, production load, and human acceptance checks are documented in [docs/TESTING.md](docs/TESTING.md).
+
 The workbooks include guided questions with immediate feedback, curriculum topics by strand, random practice, progress indicators, stars, streaks, timers, tutor mode, notes, a drawing pad, printable answer sheets, topic guides, a calculator, and browser-local progress recovery. Progress is saved in each learner's browser and does not sync between devices.
 
 ## Parent registration and email setup
