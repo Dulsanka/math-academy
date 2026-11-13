@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import WORKBOOKS from '../src/workbooks.mjs';
-import { ageOnDate, notificationEmail, normalizeProgressSummary, validateParentRegistration, validateRegistration } from '../src/account-support.mjs';
+import { ageOnDate, notificationEmail, normalizeProgressSummary, sendToApplicantAndGuardian, validateParentRegistration, validateRegistration } from '../src/account-support.mjs';
 
 const application = {
   firstName: 'Aroha', surname: 'Learner', email: 'aroha@example.test', dateOfBirth: '2012-05-02', address: '1 Learning Road',
@@ -22,6 +22,17 @@ test('notification templates escape user data and provide expected destinations'
   assert.doesNotMatch(mail.html, /<script>/);
   assert.match(mail.html, /&lt;script&gt;/);
   assert.equal(notificationEmail('approved', { firstName: 'Aroha' }, 'https://example.test/').subject, 'Your Math Academy access has been approved');
+  const parentReceipt = notificationEmail('parent-pending', { firstName: 'Mere' });
+  assert.match(parentReceipt.html, /children can sign in/);
+  assert.match(parentReceipt.text, /Children can sign in/);
+  const parentApproval = notificationEmail('approved', { account_type: 'parent', firstName: 'Mere' }, 'https://example.test/');
+  assert.match(parentApproval.html, /Parent Portal/);
+  const childApproval = notificationEmail('approved', { account_type: 'child', firstName: 'Ari' }, 'https://example.test/');
+  assert.match(childApproval.text, /workbook access are approved/);
+});
+
+test('approval mail delivery fails clearly when an account has no recipient address', async () => {
+  await assert.rejects(sendToApplicantAndGuardian({}, { username: 'orphan_child' }, notificationEmail('approved', { username: 'orphan_child' }, 'https://example.test/'), 'approval-orphan'), /no notification email address/i);
 });
 
 test('parent registration accepts adults and rejects underage applicants', () => {

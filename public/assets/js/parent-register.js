@@ -94,22 +94,29 @@
   form.addEventListener('submit', async function (event) {
     event.preventDefault();
     status.classList.remove('success');
+    status.classList.remove('warning');
     const childCards = Array.from(childrenHost.querySelectorAll('.registration-child'));
     const children = [];
     for (let index = 0; index < childCards.length; index += 1) {
       const card = childCards[index];
       const field = function (name) { return card.querySelector('[name="' + name + '"]').value.trim(); };
-      if (field('password') !== field('confirmPassword')) { status.textContent = 'The passwords for Child ' + (index + 1) + ' do not match.'; return; }
+      const password = card.querySelector('[name="password"]').value;
+      const confirmedPassword = card.querySelector('[name="confirmPassword"]').value;
+      if (password !== confirmedPassword) { status.textContent = 'The passwords for Child ' + (index + 1) + ' do not match.'; return; }
       const requestedEntitlements = Array.from(card.querySelectorAll('[name="requestedEntitlements"]:checked')).map(function (input) { return input.value; });
       if (!requestedEntitlements.length) { status.textContent = 'Choose at least one workbook for Child ' + (index + 1) + '.'; return; }
-      children.push({ firstName: field('firstName'), surname: field('surname'), dateOfBirth: field('dateOfBirth'), schoolYear: field('schoolYear'), username: field('username'), password: field('password'), requestedEntitlements: requestedEntitlements });
+      children.push({ firstName: field('firstName'), surname: field('surname'), dateOfBirth: field('dateOfBirth'), schoolYear: field('schoolYear'), username: field('username'), password: password, requestedEntitlements: requestedEntitlements });
     }
-    if (parentValue('password') !== parentValue('confirmPassword')) { status.textContent = 'The parent passwords do not match.'; return; }
+    const parentPassword = parentFields.querySelector('[name="password"]').value;
+    const parentConfirmedPassword = parentFields.querySelector('[name="confirmPassword"]').value;
+    if (parentPassword !== parentConfirmedPassword) { status.textContent = 'The parent passwords do not match.'; return; }
+    const familyUsernames = [parentValue('username')].concat(children.map(function (child) { return child.username; })).map(function (value) { return value.toLowerCase(); });
+    if (new Set(familyUsernames).size !== familyUsernames.length) { status.textContent = 'Use a different username for the parent and for each child.'; return; }
     const button = form.querySelector('button[type="submit"]'); button.disabled = true; status.textContent = 'Submitting your family registration for review...';
     const body = {
       firstName: parentValue('firstName'), surname: parentValue('surname'), email: parentValue('email'),
       dateOfBirth: parentValue('dateOfBirth'), address: [parentValue('address'), parentValue('country')].filter(Boolean).join(', '),
-      username: parentValue('username'), password: parentFields.querySelector('[name="password"]').value, children: children,
+      username: parentValue('username'), password: parentPassword, children: children,
       privacyAcknowledged: form.elements.privacyAcknowledged.checked
     };
     try {
@@ -117,8 +124,11 @@
       const result = await response.json().catch(function () { return {}; });
       if (!response.ok) throw new Error(result.error || 'Registration could not be completed.');
       form.reset(); childCount.value = '1'; renderChildren();
-      status.textContent = 'Family registration submitted. Check your email; an administrator must approve the parent and each child before sign-in or workbook access is available.';
-      status.classList.add('success');
+      status.textContent = result.emailSent === false
+        ? (result.message || 'Your family registration was saved, but the receipt email could not be sent. An administrator can resend it; children can sign in, but workbooks remain locked until approved.')
+        : 'Family registration submitted. Check your email. Your parent account awaits administrator approval; children can sign in now, but workbook access awaits administrator approval.';
+      status.classList.toggle('success', result.emailSent !== false);
+      status.classList.toggle('warning', result.emailSent === false);
     } catch (error) { status.textContent = error.message; }
     finally { button.disabled = false; }
   });

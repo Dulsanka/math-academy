@@ -88,6 +88,16 @@
       const access = document.createElement('div'); access.className = 'entitlement-grid'; makeEntitlementInputs(access, user.requestedEntitlements, 'grant-' + user.id);
       if (!isParent || isAccessReview) card.appendChild(access);
       const actions = document.createElement('div'); actions.className = 'user-actions';
+      if (isParent && isNewApproval && user.email) {
+        const receipt = document.createElement('button'); receipt.type = 'button'; receipt.className = 'secondary'; receipt.textContent = 'Resend registration receipt';
+        receipt.addEventListener('click', async function () {
+          receipt.disabled = true;
+          try { await request('/api/admin/registrations/' + encodeURIComponent(user.id) + '/receipt-email', { method: 'POST' }); setStatus('Resent the family registration receipt to ' + user.email + '.', true); }
+          catch (error) { setStatus(error.message, false); }
+          finally { receipt.disabled = false; }
+        });
+        actions.appendChild(receipt);
+      }
       const approve = document.createElement('button'); approve.type = 'button'; approve.textContent = isParent && isNewApproval ? 'Approve parent account' : 'Approve selected workbook access';
       approve.addEventListener('click', async function () {
         const entitlements = isParent && isNewApproval ? [] : checkedValues(access);
@@ -244,7 +254,7 @@
     event.preventDefault(); const form=event.currentTarget; const button=form.querySelector('button[type="submit"]'); button.disabled=true;
     try {
       const result=await request('/api/admin/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:'parent',username:form.elements.username.value.trim(),password:form.elements.password.value,firstName:form.elements.firstName.value.trim(),surname:form.elements.surname.value.trim(),email:form.elements.email.value.trim(),dateOfBirth:form.elements.dateOfBirth.value,address:form.elements.address.value.trim()})});
-      form.reset();setStatus('Created approved parent account '+result.user.username+'. Link their children from the account list.',true);await loadUsers();
+      form.reset();setStatus(result.emailSent===false?(result.message||'Parent account created, but email delivery needs attention.'):'Created approved parent account '+result.user.username+' and sent its welcome email.',result.emailSent!==false);await loadUsers();
     } catch(error){setStatus(error.message,false);} finally{button.disabled=false;}
   });
 

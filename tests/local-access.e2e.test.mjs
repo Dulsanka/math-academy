@@ -160,8 +160,11 @@ test('end-to-end access, entitlements, administrator actions, and session lifecy
   assert.equal(removedAdmin.status, 200);
   const addedParent = await request('/api/admin/users', { method: 'POST', cookie: adminLogin.cookie, body: { role: 'parent', username: 'qa_admin_parent', password: 'Qa-admin-parent-passphrase-4856', firstName: 'Managed', surname: 'Parent', email: 'managed-parent@example.test', dateOfBirth: '1985-02-01', address: '3 Parent Road' } });
   assert.equal(addedParent.status, 201, 'admin can create an approved parent account to own migrated children');
-  adminCreatedParentId = (await addedParent.json()).user.id;
+  const addedParentBody = await addedParent.json();
+  adminCreatedParentId = addedParentBody.user.id;
+  assert.equal(addedParentBody.emailSent, false, 'parent account remains created if welcome email delivery fails');
   assert.equal((await (await request('/api/admin/users', { cookie: adminLogin.cookie })).json()).users.find(user => user.id === adminCreatedParentId).accountType, 'parent');
+  assert.equal((await request('/api/admin/users/' + adminCreatedParentId + '/approval-email', { method: 'POST', cookie: adminLogin.cookie })).status, 502, 'welcome email retry reports provider configuration errors');
   const adminCreatedParentLogin = await signIn('qa_admin_parent', 'Qa-admin-parent-passphrase-4856');
   assert.equal(adminCreatedParentLogin.response.status, 200);
   const parentLogin = await signIn(PARENT_NAME, PARENT_PASSWORD);
@@ -242,6 +245,22 @@ test('end-to-end access, entitlements, administrator actions, and session lifecy
   } });
   assert.equal(registration.status, 403, 'public learner self-registration is disabled');
   assert.equal((await signIn('pending-user', 'Pending-user-passphrase-4872')).response.status, 401, 'failed email registration leaves no account behind');
+  const familyRegistration = await request('/api/auth/register-parent', { method: 'POST', body: {
+    firstName: 'Email', surname: 'Retry', email: 'email-retry@example.test', dateOfBirth: '1985-05-10', address: '2 Family Street, New Zealand',
+    username: 'qa_email_parent', password: 'Email-parent-passphrase-4879', privacyAcknowledged: true,
+    children: [{ firstName: 'Email', surname: 'Child', dateOfBirth: '2015-05-10', schoolYear: 'Year 6', username: 'qa_email_child', password: 'Email-child-passphrase-4880', requestedEntitlements: ['year6'] }]
+  } });
+  assert.equal(familyRegistration.status, 202, 'a mail outage keeps the submitted family registration instead of rolling it back');
+  assert.equal((await familyRegistration.json()).emailSent, false);
+  const persistedParent = (await (await request('/api/admin/users', { cookie: adminLogin.cookie })).json()).users.find(user => user.username === 'qa_email_parent');
+  const persistedChild = (await (await request('/api/admin/users', { cookie: adminLogin.cookie })).json()).users.find(user => user.username === 'qa_email_child');
+  assert.ok(persistedParent && persistedChild, 'parent and child rows remain available for review');
+  assert.equal(persistedParent.active, false, 'parent sign-in remains pending admin approval');
+  assert.equal(persistedChild.active, true, 'child can sign in with their own credentials');
+  assert.equal((await signIn('qa_email_child', 'Email-child-passphrase-4880')).response.status, 200);
+  assert.equal((await request('/api/admin/registrations/' + persistedParent.id + '/receipt-email', { method: 'POST', cookie: adminLogin.cookie })).status, 502, 'admin can retry the receipt and see a provider failure');
+  assert.equal((await request('/api/admin/registrations/' + persistedParent.id, { method: 'DELETE', cookie: adminLogin.cookie })).status, 200, 'declining a family registration removes its child records too');
+  assert.equal((await (await request('/api/admin/users', { cookie: adminLogin.cookie })).json()).users.some(user => user.username === 'qa_email_child'), false);
   assert.equal((await request('/api/auth/forgot-password', { method: 'POST', body: { email: 'unknown@example.test' } })).status, 200);
 
   assert.equal((await request('/api/admin/users', { method: 'POST', cookie: adminLogin.cookie, body: { username: 'learner', password: 'Learner-passphrase-4938', entitlements: ['year12'] } })).status, 400, 'admins cannot create standalone learner profiles');

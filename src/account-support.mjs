@@ -91,22 +91,35 @@ export function notificationEmail(kind, profile, detail = '') {
   const name = escapeHtml(profile.firstName || profile.first_name || profile.username || 'learner');
   let subject;
   let message;
+  let textMessage;
   if (kind === 'pending') {
     subject = 'Math Academy registration received';
     message = `<p>Hi ${name},</p><p>We received your NZ Mathematics Academy registration. Your requested workbook access is pending administrator review. We will email you again when a decision has been made.</p><p>If you are under 18, your parent or guardian will also receive an email when access is approved.</p>`;
+    textMessage = 'Your registration and requested workbook access are pending administrator review.';
   } else if (kind === 'parent-pending') {
-    subject = 'Parent account request received';
-    message = `<p>Hi ${name},</p><p>We received your parent or guardian account request. An administrator must approve the account before you can add or manage child profiles.</p><p>Administrators separately approve all workbook access requests made for children.</p>`;
+    subject = 'Family registration received — awaiting review';
+    message = `<p>Hi ${name},</p><p>We received your family registration. Your parent or guardian account is pending administrator approval. The child profiles have been created, and children can sign in with the usernames and passwords you chose.</p><p>Children will not see or open workbook pages until an administrator approves the requested workbook access. You can manage child profiles after your parent account is approved.</p>`;
+    textMessage = 'We received your family registration. Your parent account is pending administrator approval. Children can sign in with their credentials, but cannot open workbook pages until an administrator approves access.';
   } else if (kind === 'approved') {
     subject = 'Your Math Academy access has been approved';
-    message = `<p>Congratulations, ${name}! Your NZ Mathematics Academy account has been approved.</p><p>You can now sign in at <a href="${escapeHtml(detail)}">Math Academy</a> with the username you registered.</p>`;
+    if (profile.account_type === 'parent' || profile.accountType === 'parent') {
+      message = `<p>Congratulations, ${name}! Your parent or guardian account has been approved.</p><p>Sign in at <a href="${escapeHtml(detail)}">Math Academy</a> with your username to open the Parent Portal and manage your children.</p>`;
+      textMessage = `Your parent or guardian account is approved. Sign in at ${detail} to open the Parent Portal.`;
+    } else if (profile.account_type === 'child' || profile.accountType === 'child') {
+      message = `<p>Congratulations, ${name}! An administrator has approved your account and workbook access.</p><p>Sign in at <a href="${escapeHtml(detail)}">Math Academy</a> with the username and password your parent or guardian gave you.</p>`;
+      textMessage = `Your account and workbook access are approved. Sign in at ${detail} with your username and password.`;
+    } else {
+      message = `<p>Congratulations, ${name}! Your NZ Mathematics Academy account has been approved.</p><p>You can now sign in at <a href="${escapeHtml(detail)}">Math Academy</a> with the username you registered.</p>`;
+      textMessage = `Your account is approved. Sign in at ${detail} with your username.`;
+    }
   } else if (kind === 'reset') {
     subject = 'Reset your Math Academy password';
     message = `<p>Hello ${name},</p><p>Use the link below to choose a new password. The link expires in 30 minutes and can only be used once.</p><p><a href="${escapeHtml(detail)}">Reset password</a></p><p>If you did not request this, ignore this email.</p>`;
+    textMessage = `Use this link to reset your password (expires in 30 minutes): ${detail}`;
   } else {
     throw new Error('Unknown email template.');
   }
-  return { subject, html: `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#172554;line-height:1.6"><main style="max-width:600px;margin:auto;padding:28px"><h1 style="color:#2563eb">NZ Mathematics Academy</h1>${message}<p>— NZ Mathematics Academy</p></main></body></html>`, text: `${subject}\n\n${kind === 'approved' ? `Congratulations, ${profile.firstName || profile.first_name || ''}! Your access is approved. Sign in: ${detail}` : kind === 'reset' ? `Use this link to reset your password (expires in 30 minutes): ${detail}` : `We received your registration. Your workbook access is pending administrator review.`}` };
+  return { subject, html: `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#172554;line-height:1.6"><main style="max-width:600px;margin:auto;padding:28px"><h1 style="color:#2563eb">NZ Mathematics Academy</h1>${message}<p>— NZ Mathematics Academy</p></main></body></html>`, text: `${subject}\n\n${textMessage}` };
 }
 
 export async function sendEmail(env, to, email, idempotencyKey) {
@@ -127,5 +140,6 @@ export async function sendEmail(env, to, email, idempotencyKey) {
 
 export async function sendToApplicantAndGuardian(env, profile, email, idempotencyPrefix) {
   const recipients = [...new Set([profile.email, profile.parentEmail || profile.parent_email].filter(Boolean).map((value) => value.trim().toLowerCase()))];
+  if (!recipients.length) throw new Error('No notification email address is available for this account.');
   await Promise.all(recipients.map((recipient) => sendEmail(env, recipient, email, `${idempotencyPrefix}-${recipient}`)));
 }

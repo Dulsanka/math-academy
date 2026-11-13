@@ -101,6 +101,11 @@ function parentChild(user) {
 
 function localEmailEnv() { return { RESEND_API_KEY: process.env.RESEND_API_KEY, RESEND_FROM_EMAIL: process.env.RESEND_FROM_EMAIL }; }
 
+function approvalEmailKey(userId, entitlements) {
+  const grant = [...new Set(entitlements || [])].sort().join('-') || 'none';
+  return `approval-${userId}-${grant}`;
+}
+
 function getCookie(req, name) {
   const cookieHeader = req.headers.cookie || '';
   for (const part of cookieHeader.split(';')) {
@@ -247,7 +252,9 @@ async function handleApi(req, res, urlPath) {
     const seen = new Set();
     for (const registration of registrations) {
       const key = registration.username.toLowerCase();
-      if (seen.has(key) || users.some((user) => user.username.toLowerCase() === key || (registration.email && (user.email || '').toLowerCase() === registration.email))) return sendJson(res, 409, { error: `The username ${registration.username} is already registered.` });
+      if (seen.has(key)) return sendJson(res, 409, { error: 'Parent and child usernames must all be unique.' });
+      if (users.some((user) => user.username.toLowerCase() === key)) return sendJson(res, 409, { error: `The username ${registration.username} is already in use. Choose a different username for that account.` });
+      if (registration.email && users.some((user) => (user.email || '').toLowerCase() === registration.email)) return sendJson(res, 409, { error: 'That parent email address is already linked to an account. Sign in or contact an administrator.' });
       seen.add(key);
     }
     const passwordFields = await makePassword(body.password);
@@ -264,9 +271,13 @@ async function handleApi(req, res, urlPath) {
         parentName: `${parent.firstName} ${parent.surname}`.trim(), parentEmail: parent.email, ...childPassword, createdAt: new Date().toISOString() });
     }
     users.push(parent, ...children); saveUsers();
-    try { await accountSupport.sendEmail(localEmailEnv(), email, accountSupport.notificationEmail('parent-pending', parent), `parent-registration-${parent.id}-${email}`); }
-    catch (error) { const failedIds = new Set([parent.id, ...children.map((child) => child.id)]); users = users.filter((user) => !failedIds.has(user.id)); saveUsers(); return sendJson(res, 503, { error: error.message }); }
-    return sendJson(res, 201, { ok: true });
+    try {
+      await accountSupport.sendEmail(localEmailEnv(), email, accountSupport.notificationEmail('parent-pending', parent), `parent-registration-${parent.id}-${email}`);
+      return sendJson(res, 201, { ok: true, emailSent: true });
+    } catch (error) {
+      console.error('Family registration receipt could not be sent:', error.message);
+      return sendJson(res, 202, { ok: true, emailSent: false, message: 'Your family registration was saved, but the receipt email could not be sent. An administrator can resend it. Children can sign in, but their workbook pages remain locked until approved.' });
+    }
   }
 
   if (req.method === 'POST' && urlPath === '/api/auth/forgot-password') {
@@ -501,6 +512,15 @@ async function handleApi(req, res, urlPath) {
       return sendJson(res, 200, { children });
     }
 
+    const receiptMatch = urlPath.match(/^\/api\/admin\/registrations\/([0-9a-f-]+)\/receipt-email$/i);
+    if (req.method === 'POST' && receiptMatch) {
+      const parent = users.find((user) => user.id === receiptMatch[1] && user.role === 'student' && user.accountType === 'parent' && user.approvalStatus === 'pending');
+      if (!parent) return sendJson(res, 404, { error: 'Pending parent registration not found.' });
+      try { await accountSupport.sendEmail(localEmailEnv(), parent.email, accountSupport.notificationEmail('parent-pending', parent), `parent-registration-${parent.id}-${parent.email}`); }
+      catch (error) { return sendJson(res, 502, { error: error.message }); }
+      return sendJson(res, 200, { ok: true });
+    }
+
     const approveMatch = urlPath.match(/^\/api\/admin\/registrations\/([0-9a-f-]+)\/approve$/i);
     if (req.method === 'POST' && approveMatch) {
       let body;
@@ -515,7 +535,7 @@ async function handleApi(req, res, urlPath) {
       if (newApproval) target.active = target.parentEnabled !== false && target.adminEnabled !== false;
       saveUsers();
       const appUrl = process.env.PUBLIC_APP_URL || `http://${req.headers.host || 'localhost:3000'}`;
-      try { await accountSupport.sendToApplicantAndGuardian(localEmailEnv(), target, accountSupport.notificationEmail('approved', target, appUrl), `approval-${target.id}`); }
+      try { await accountSupport.sendToApplicantAndGuardian(localEmailEnv(), target, accountSupport.notificationEmail('approved', target, appUrl), approvalEmailKey(target.id, target.entitlements)); }
       catch (error) { return sendJson(res, 502, { error: `Access was approved, but the notification could not be sent. Use Send approval email to retry. ${error.message}` }); }
       return sendJson(res, 200, { user: adminUser(target) });
     }
@@ -524,7 +544,12 @@ async function handleApi(req, res, urlPath) {
     if (req.method === 'DELETE' && rejectMatch) {
       const target = users.find((user) => user.id === rejectMatch[1] && user.approvalStatus === 'pending' && user.role === 'student');
       if (!target) return sendJson(res, 409, { error: 'This registration is no longer pending.' });
-      users = users.filter((user) => user.id !== target.id); saveUsers(); return sendJson(res, 200, { ok: true });
+      const deletedIds = new Set([target.id]);
+      if (target.accountType === 'parent') users.filter((user) => user.parentId === target.id).forEach((user) => deletedIds.add(user.id));
+      users = users.filter((user) => !deletedIds.has(user.id));
+      progressSessions = progressSessions.filter((item) => !deletedIds.has(item.userId)); saveProgress();
+      for (const [token, session] of sessions) if (deletedIds.has(session.userId)) sessions.delete(token);
+      saveUsers(); return sendJson(res, 200, { ok: true });
     }
 
     const rejectAccessMatch = urlPath.match(/^\/api\/admin\/registrations\/([0-9a-f-]+)\/reject-access$/i);
@@ -540,7 +565,7 @@ async function handleApi(req, res, urlPath) {
       const target = users.find((user) => user.id === approvalEmailMatch[1] && user.active && (user.approvalStatus || 'approved') === 'approved');
       if (!target) return sendJson(res, 404, { error: 'Approved account not found.' });
       const appUrl = process.env.PUBLIC_APP_URL || `http://${req.headers.host || 'localhost:3000'}`;
-      try { await accountSupport.sendToApplicantAndGuardian(localEmailEnv(), target, accountSupport.notificationEmail('approved', target, appUrl), `approval-retry-${target.id}-${Date.now()}`); }
+      try { await accountSupport.sendToApplicantAndGuardian(localEmailEnv(), target, accountSupport.notificationEmail('approved', target, appUrl), approvalEmailKey(target.id, target.entitlements)); }
       catch (error) { return sendJson(res, 502, { error: error.message }); }
       return sendJson(res, 200, { ok: true });
     }
@@ -568,6 +593,12 @@ async function handleApi(req, res, urlPath) {
       if (users.some((item) => item.username.toLowerCase() === username.toLowerCase())) return sendJson(res, 409, { error: 'That username already exists.' });
       const created = { id: crypto.randomUUID(), username, role: role === 'admin' ? 'admin' : 'student', accountType: role, active: true, adminEnabled: true, parentEnabled: true, approvalStatus: 'approved', entitlements: role === 'admin' ? Object.keys(WORKBOOKS) : [], requestedEntitlements: [], firstName: role === 'parent' ? body.firstName.trim() : '', surname: role === 'parent' ? body.surname.trim() : '', email: role === 'parent' ? body.email.trim().toLowerCase() : '', dateOfBirth: role === 'parent' ? body.dateOfBirth : '', address: role === 'parent' ? body.address.trim() : '', schoolYear: '', parentId: null, ...passwordFields, createdAt: new Date().toISOString() };
       users.push(created); saveUsers();
+      if (role === 'parent') {
+        const appUrl = process.env.PUBLIC_APP_URL || `http://${req.headers.host || 'localhost:3000'}`;
+        try { await accountSupport.sendEmail(localEmailEnv(), created.email, accountSupport.notificationEmail('approved', created, appUrl), `parent-created-${created.id}-${created.email}`); }
+        catch (error) { console.error('Administrator-created parent welcome email could not be sent:', error.message); return sendJson(res, 201, { user: publicUser(created), emailSent: false, message: 'Parent account created, but the welcome email could not be sent. Use Send approval email in the account list to retry.' }); }
+        return sendJson(res, 201, { user: publicUser(created), emailSent: true });
+      }
       return sendJson(res, 201, { user: publicUser(created) });
     }
 
@@ -620,7 +651,13 @@ async function handleApi(req, res, urlPath) {
         target.active = Boolean(body.active && target.parentEnabled !== false && (target.approvalStatus || 'approved') === 'approved' && (target.accountType !== 'child' || newParentId));
         if (!target.active) for (const [token, session] of sessions) if (session.userId === target.id) sessions.delete(token);
       }
-      if (body.parentId !== undefined) { target.parentId = newParentId; if (!newParentId) { target.active = false; for (const [token, session] of sessions) if (session.userId === target.id) sessions.delete(token); } }
+      if (body.parentId !== undefined) {
+        target.parentId = newParentId;
+        const linkedParent = users.find((item) => item.id === newParentId && item.accountType === 'parent');
+        target.parentName = linkedParent ? `${linkedParent.firstName || ''} ${linkedParent.surname || ''}`.trim() : '';
+        target.parentEmail = linkedParent ? linkedParent.email || '' : '';
+        if (!newParentId) { target.active = false; for (const [token, session] of sessions) if (session.userId === target.id) sessions.delete(token); }
+      }
       saveUsers();
       return sendJson(res, 200, { user: publicUser(target) });
     }

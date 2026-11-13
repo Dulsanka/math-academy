@@ -87,6 +87,11 @@ function sameEntitlements(left, right) {
   return Array.isArray(left) && Array.isArray(right) && [...new Set(left)].sort().join('\0') === [...new Set(right)].sort().join('\0');
 }
 
+function approvalEmailKey(userId, entitlements) {
+  const grant = [...new Set(entitlements || [])].sort().join('-') || 'none';
+  return `approval-${userId}-${grant}`;
+}
+
 function accountProfile(row) {
   return {
     id: row.id, username: row.username, role: row.role, accountType: row.role === 'admin' ? 'admin' : (row.account_type || 'learner'),
@@ -290,9 +295,12 @@ async function handleApi(request, env, url) {
       const key = registration.username.toLowerCase();
       if (seen.has(key)) return json({ error: 'Parent and child usernames must all be unique.' }, 409);
       seen.add(key);
-      const existing = await env.DB.prepare('SELECT id FROM users WHERE username_key=lower(?) OR (? <> \'\' AND lower(email)=?) LIMIT 1')
-        .bind(registration.username, registration.email, registration.email).first();
-      if (existing) return json({ error: `The username ${registration.username} is already registered.` }, 409);
+      const existingUsername = await env.DB.prepare('SELECT id FROM users WHERE username_key=lower(?) LIMIT 1').bind(registration.username).first();
+      if (existingUsername) return json({ error: `The username ${registration.username} is already in use. Choose a different username for that account.` }, 409);
+      if (registration.email) {
+        const existingEmail = await env.DB.prepare('SELECT id FROM users WHERE email_key=lower(?) LIMIT 1').bind(registration.email).first();
+        if (existingEmail) return json({ error: 'That parent email address is already linked to an account. Sign in or contact an administrator.' }, 409);
+      }
     }
     const parentSalt = randomHex(16); const parentHash = await derivePassword(body.password, parentSalt); const id = crypto.randomUUID();
     const statements = [env.DB.prepare(
@@ -315,9 +323,13 @@ async function handleApi(request, env, url) {
       if (String(error.message).toLowerCase().includes('unique')) return json({ error: 'A parent or child username/email is already registered.' }, 409);
       throw error;
     }
-    try { await sendEmail(env, email, notificationEmail('parent-pending', { firstName: body.firstName }), `parent-registration-${id}-${email}`); }
-    catch (error) { await env.DB.prepare("DELETE FROM users WHERE id=? AND approval_status='pending'").bind(id).run(); return json({ error: error.message }, 503); }
-    return json({ ok: true }, 201);
+    try {
+      await sendEmail(env, email, notificationEmail('parent-pending', { firstName: body.firstName }), `parent-registration-${id}-${email}`);
+      return json({ ok: true, emailSent: true }, 201);
+    } catch (error) {
+      console.error('Family registration receipt could not be sent:', error.message);
+      return json({ ok: true, emailSent: false, message: 'Your family registration was saved, but the receipt email could not be sent. An administrator can resend it. Children can sign in, but their workbook pages remain locked until approved.' }, 202);
+    }
   }
 
   if (pathname === '/api/auth/forgot-password' && request.method === 'POST') {
@@ -637,6 +649,17 @@ async function handleApi(request, env, url) {
     return json({ children: [...children.values()] });
   }
 
+  const receiptMatch = pathname.match(/^\/api\/admin\/registrations\/([0-9a-f-]+)\/receipt-email$/i);
+  if (receiptMatch && request.method === 'POST') {
+    const row = await env.DB.prepare("SELECT * FROM users WHERE id=? AND role='student' AND account_type='parent' AND approval_status='pending'").bind(receiptMatch[1]).first();
+    if (!row) return json({ error: 'Pending parent registration not found.' }, 404);
+    const email = (row.email || '').trim().toLowerCase();
+    if (!email) return json({ error: 'This parent account has no email address.' }, 400);
+    try { await sendEmail(env, email, notificationEmail('parent-pending', row), `parent-registration-${row.id}-${email}`); }
+    catch (error) { return json({ error: error.message }, 502); }
+    return json({ ok: true });
+  }
+
   const approvalMatch = pathname.match(/^\/api\/admin\/registrations\/([0-9a-f-]+)\/approve$/i);
   if (approvalMatch && request.method === 'POST') {
     let body;
@@ -653,8 +676,8 @@ async function handleApi(request, env, url) {
     if (!update.meta.changes) return json({ error: 'This registration is no longer pending.' }, 409);
     const row = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(approvalMatch[1]).first();
     const profile = { ...row, firstName: row.first_name, parentEmail: row.parent_email };
-    try { await sendToApplicantAndGuardian(env, profile, notificationEmail('approved', profile, url.origin), `approval-${row.id}`); }
-    catch (error) { return json({ error: `Access was approved, but the notification could not be sent. Use Send approval email to retry. ${error.message}` }, 502); }
+    try { await sendToApplicantAndGuardian(env, profile, notificationEmail('approved', profile, url.origin), approvalEmailKey(row.id, parseEntitlements(row.entitlements))); }
+    catch (error) { return json({ error: `Access was approved, but the notification could not be confirmed. One or more recipients may already have received it. Use Send approval email to retry. ${error.message}` }, 502); }
     return json({ user: adminUser(row) });
   }
 
@@ -677,7 +700,7 @@ async function handleApi(request, env, url) {
     const row = await env.DB.prepare("SELECT * FROM users WHERE id=? AND approval_status='approved' AND active=1").bind(approvalEmailMatch[1]).first();
     if (!row) return json({ error: 'Approved account not found.' }, 404);
     const profile = { ...row, firstName: row.first_name, parentEmail: row.parent_email };
-    try { await sendToApplicantAndGuardian(env, profile, notificationEmail('approved', profile, url.origin), `approval-retry-${row.id}-${now}`); }
+    try { await sendToApplicantAndGuardian(env, profile, notificationEmail('approved', profile, url.origin), approvalEmailKey(row.id, parseEntitlements(row.entitlements))); }
     catch (error) { return json({ error: error.message }, 502); }
     return json({ ok: true });
   }
@@ -715,6 +738,14 @@ async function handleApi(request, env, url) {
       throw error;
     }
     const created = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first();
+    if (role === 'parent') {
+      try { await sendEmail(env, created.email, notificationEmail('approved', created, url.origin), `parent-created-${created.id}-${created.email}`); }
+      catch (error) {
+        console.error('Administrator-created parent welcome email could not be sent:', error.message);
+        return json({ user: publicUser(created), emailSent: false, message: 'Parent account created, but the welcome email could not be sent. Use Send approval email in the account list to retry.' }, 201);
+      }
+      return json({ user: publicUser(created), emailSent: true }, 201);
+    }
     return json({ user: publicUser(created) }, 201);
   }
 
@@ -759,6 +790,8 @@ async function handleApi(request, env, url) {
     let adminEnabled = Boolean(target.admin_enabled);
     let email = target.email || '';
     let parentId = target.parent_id || '';
+    let parentName = target.parent_name || '';
+    let parentEmail = target.parent_email || '';
     if (body.username !== undefined) {
       username = String(body.username).trim();
       if (!validUsername(username)) return json({ error: 'Username must be 3-32 valid characters.' }, 400);
@@ -776,11 +809,13 @@ async function handleApi(request, env, url) {
       if (target.account_type !== 'child') return json({ error: 'Only child accounts can be linked to a parent.' }, 400);
       if (body.parentId !== null && (typeof body.parentId !== 'string' || !body.parentId)) return json({ error: 'Choose a valid parent account or leave the child unassigned.' }, 400);
       if (body.parentId) {
-        const parent = await env.DB.prepare("SELECT id FROM users WHERE id=? AND account_type='parent' AND active=1 AND approval_status='approved'").bind(body.parentId).first();
+        const parent = await env.DB.prepare("SELECT id, first_name, surname, email FROM users WHERE id=? AND account_type='parent' AND active=1 AND approval_status='approved'").bind(body.parentId).first();
         if (!parent) return json({ error: 'Choose an approved parent account.' }, 400);
+        parentName = `${parent.first_name || ''} ${parent.surname || ''}`.trim();
+        parentEmail = parent.email || '';
       }
       parentId = body.parentId || '';
-      if (!parentId) active = false;
+      if (!parentId) { active = false; parentName = ''; parentEmail = ''; }
     }
     if (body.email !== undefined) {
       if (!validEmail(body.email)) return json({ error: 'Enter a valid email address.' }, 400);
@@ -790,10 +825,10 @@ async function handleApi(request, env, url) {
     }
     try {
       const update = await env.DB.prepare(
-        `UPDATE users SET username = ?, username_key = lower(?), entitlements = ?, active = ?, admin_enabled = ?, email = ?, email_key = lower(?), parent_id = ?
+        `UPDATE users SET username = ?, username_key = lower(?), entitlements = ?, active = ?, admin_enabled = ?, email = ?, email_key = lower(?), parent_id = ?, parent_name = ?, parent_email = ?
           WHERE id = ? AND (? = 1 OR role != 'admin' OR active = 0 OR
             (SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = 1) > 1)`
-      ).bind(username, username, JSON.stringify(entitlements), active ? 1 : 0, adminEnabled ? 1 : 0, email, email, parentId || null, target.id, active ? 1 : 0).run();
+      ).bind(username, username, JSON.stringify(entitlements), active ? 1 : 0, adminEnabled ? 1 : 0, email, email, parentId || null, parentName, parentEmail, target.id, active ? 1 : 0).run();
       if (!active && target.role === 'admin' && !update.meta.changes) {
         return json({ error: 'Keep at least one active administrator.' }, 400);
       }
