@@ -11,6 +11,7 @@ const ROOT = path.resolve(__dirname, '..');
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 const USER_STORE = path.join(DATA_DIR, 'users.json');
+const PROGRESS_STORE = path.join(DATA_DIR, 'progress.json');
 const PORT = Number(process.env.PORT || 3000);
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 const PASSWORD_BYTES = 64;
@@ -26,6 +27,7 @@ const sessions = new Map();
 const loginAttempts = new Map();
 const MAX_LOGIN_ATTEMPT_KEYS = 10_000;
 let users = [];
+let progressSessions = [];
 let WORKBOOKS;
 let accountSupport;
 
@@ -46,6 +48,12 @@ function saveUsers() {
   const temporaryFile = USER_STORE + '.tmp';
   fs.writeFileSync(temporaryFile, JSON.stringify(users, null, 2), { mode: 0o600 });
   fs.renameSync(temporaryFile, USER_STORE);
+}
+
+function saveProgress() {
+  const temporaryFile = PROGRESS_STORE + '.tmp';
+  fs.writeFileSync(temporaryFile, JSON.stringify(progressSessions, null, 2), { mode: 0o600 });
+  fs.renameSync(temporaryFile, PROGRESS_STORE);
 }
 
 function validUsername(username) {
@@ -76,7 +84,7 @@ function adminUser(user) {
   return {
     ...publicUser(user), approvalStatus: user.approvalStatus || 'approved', firstName: user.firstName || '', surname: user.surname || '',
     email: user.email || '', dateOfBirth: user.dateOfBirth || '', address: user.address || '', schoolYear: user.schoolYear || '',
-    requestedEntitlements: user.requestedEntitlements || [], accessRequestStatus: user.accessRequestStatus || 'none', parentName: user.parentName || '', parentEmail: user.parentEmail || '', createdAt: user.createdAt
+    requestedEntitlements: user.requestedEntitlements || [], accessRequestStatus: user.accessRequestStatus || 'none', parentName: user.parentName || '', parentEmail: user.parentEmail || '', parentId: user.parentId || '', createdAt: user.createdAt
   };
 }
 
@@ -206,14 +214,14 @@ function workbooksForPath(urlPath) {
 
 function resolveStaticPath(urlPath) {
   if (urlPath === '/' || urlPath === '/index.html') return 'index.html';
-  if (['/register.html', '/parent-register.html', '/parent.html', '/forgot-password.html', '/reset-password.html'].includes(urlPath)) return urlPath.slice(1);
+  if (['/parent-register.html', '/parent.html', '/forgot-password.html', '/reset-password.html'].includes(urlPath)) return urlPath.slice(1);
   if (urlPath === '/assets/css/site.css') return 'assets/css/site.css';
   if (urlPath === '/assets/css/access.css') return 'assets/css/access.css';
   if (urlPath === '/assets/css/parent.css') return 'assets/css/parent.css';
   if (urlPath === '/assets/css/interactive-workbook.css') return 'assets/css/interactive-workbook.css';
   if (urlPath === '/assets/css/curriculum-workbook.css') return 'assets/css/curriculum-workbook.css';
   if (urlPath === '/assets/js/site.js') return 'assets/js/site.js';
-  if (['/assets/js/register.js', '/assets/js/parent-register.js', '/assets/js/forgot-password.js', '/assets/js/reset-password.js'].includes(urlPath)) return urlPath.slice(1);
+  if (['/assets/js/parent-register.js', '/assets/js/forgot-password.js', '/assets/js/reset-password.js'].includes(urlPath)) return urlPath.slice(1);
   if (urlPath === '/parent.js') return 'assets/js/parent.js';
   if (urlPath === '/assets/favicon.svg') return 'assets/favicon.svg';
   if (urlPath === '/admin.js') return 'assets/js/admin.js';
@@ -223,54 +231,41 @@ function resolveStaticPath(urlPath) {
 
 async function handleApi(req, res, urlPath) {
   if (req.method === 'POST' && urlPath === '/api/auth/register') {
-    let body;
-    try { body = await readJson(req); } catch (error) { return sendJson(res, 400, { error: error.message }); }
-    const invalid = accountSupport.validateRegistration(body, WORKBOOKS);
-    if (invalid) return sendJson(res, 400, { error: invalid });
-    if (body.privacyAcknowledged !== true) return sendJson(res, 400, { error: 'Please acknowledge the privacy notice before submitting.' });
-    const ip = req.socket.remoteAddress || 'unknown';
-    const attemptKey = `register:${ip}`; const state = currentAttemptState(attemptKey);
-    state.count += 1; loginAttempts.set(attemptKey, state);
-    if (state.count > 5) return sendJson(res, 429, { error: 'Too many registration attempts. Please try again later.' });
-    const username = body.username.trim(); const email = body.email.trim().toLowerCase();
-    if (users.some((user) => user.username.toLowerCase() === username.toLowerCase() || (user.email || '').toLowerCase() === email)) return sendJson(res, 409, { error: 'That username or email address is already registered.' });
-    const passwordFields = await makePassword(body.password);
-    if (users.some((user) => user.username.toLowerCase() === username.toLowerCase() || (user.email || '').toLowerCase() === email)) return sendJson(res, 409, { error: 'That username or email address is already registered.' });
-    const created = {
-      id: crypto.randomUUID(), username, role: 'student', accountType: 'learner', active: false, approvalStatus: 'pending', entitlements: [],
-      requestedEntitlements: [...new Set(body.requestedEntitlements)], firstName: body.firstName.trim(), surname: body.surname.trim(),
-      email, dateOfBirth: body.dateOfBirth, address: body.address.trim(), schoolYear: body.schoolYear,
-      parentName: body.parentName?.trim() || '', parentEmail: body.parentEmail?.trim().toLowerCase() || '', parentEnabled: true, adminEnabled: true,
-      ...passwordFields, createdAt: new Date().toISOString()
-    };
-    users.push(created); saveUsers();
-    try {
-      await accountSupport.sendEmail(localEmailEnv(), email, accountSupport.notificationEmail('pending', created), `registration-${created.id}-${email}`);
-    } catch (error) {
-      users = users.filter((user) => user.id !== created.id); saveUsers();
-      return sendJson(res, 503, { error: error.message });
-    }
-    return sendJson(res, 201, { ok: true });
+    return sendJson(res, 403, { error: 'Only parents or guardians can register. Create a parent account and add each child there.' });
   }
 
   if (req.method === 'POST' && urlPath === '/api/auth/register-parent') {
     let body;
     try { body = await readJson(req); } catch (error) { return sendJson(res, 400, { error: error.message }); }
-    const invalid = accountSupport.validateParentRegistration(body);
+    const invalid = accountSupport.validateParentRegistration(body, WORKBOOKS);
     if (invalid) return sendJson(res, 400, { error: invalid });
     if (body.privacyAcknowledged !== true) return sendJson(res, 400, { error: 'Please acknowledge the privacy notice before submitting.' });
     const ip = req.socket.remoteAddress || 'unknown'; const key = `parent-register:${ip}`; const attempt = currentAttemptState(key); attempt.count += 1; loginAttempts.set(key, attempt);
     if (attempt.count > 5) return sendJson(res, 429, { error: 'Too many registration attempts. Please try again later.' });
     const username = body.username.trim(); const email = body.email.trim().toLowerCase();
-    if (users.some((user) => user.username.toLowerCase() === username.toLowerCase() || (user.email || '').toLowerCase() === email)) return sendJson(res, 409, { error: 'That username or email address is already registered.' });
+    const registrations = [{ username, email }, ...body.children.map((child) => ({ username: child.username.trim(), email: '' }))];
+    const seen = new Set();
+    for (const registration of registrations) {
+      const key = registration.username.toLowerCase();
+      if (seen.has(key) || users.some((user) => user.username.toLowerCase() === key || (registration.email && (user.email || '').toLowerCase() === registration.email))) return sendJson(res, 409, { error: `The username ${registration.username} is already registered.` });
+      seen.add(key);
+    }
     const passwordFields = await makePassword(body.password);
-    if (users.some((user) => user.username.toLowerCase() === username.toLowerCase() || (user.email || '').toLowerCase() === email)) return sendJson(res, 409, { error: 'That username or email address is already registered.' });
     const parent = { id: crypto.randomUUID(), username, role: 'student', accountType: 'parent', parentId: null, active: false, approvalStatus: 'pending', entitlements: [], requestedEntitlements: [], parentEnabled: true, adminEnabled: true,
       firstName: body.firstName.trim(), surname: body.surname.trim(), email, dateOfBirth: body.dateOfBirth, address: body.address.trim(), schoolYear: '', parentName: '', parentEmail: '',
       ...passwordFields, createdAt: new Date().toISOString() };
-    users.push(parent); saveUsers();
+    const children = [];
+    for (const childDetails of body.children) {
+      const childPassword = await makePassword(childDetails.password);
+      children.push({ id: crypto.randomUUID(), username: childDetails.username.trim(), role: 'student', accountType: 'child', parentId: parent.id,
+        active: true, approvalStatus: 'pending', entitlements: [], requestedEntitlements: [...new Set(childDetails.requestedEntitlements)],
+        parentEnabled: true, adminEnabled: true, firstName: childDetails.firstName.trim(), surname: childDetails.surname.trim(),
+        dateOfBirth: childDetails.dateOfBirth, address: parent.address, schoolYear: childDetails.schoolYear, email: '',
+        parentName: `${parent.firstName} ${parent.surname}`.trim(), parentEmail: parent.email, ...childPassword, createdAt: new Date().toISOString() });
+    }
+    users.push(parent, ...children); saveUsers();
     try { await accountSupport.sendEmail(localEmailEnv(), email, accountSupport.notificationEmail('parent-pending', parent), `parent-registration-${parent.id}-${email}`); }
-    catch (error) { users = users.filter((user) => user.id !== parent.id); saveUsers(); return sendJson(res, 503, { error: error.message }); }
+    catch (error) { const failedIds = new Set([parent.id, ...children.map((child) => child.id)]); users = users.filter((user) => !failedIds.has(user.id)); saveUsers(); return sendJson(res, 503, { error: error.message }); }
     return sendJson(res, 201, { ok: true });
   }
 
@@ -308,6 +303,7 @@ async function handleApi(req, res, urlPath) {
   }
 
   const accountAuth = getSession(req);
+  if (urlPath.startsWith('/api/account') && accountAuth?.user.accountType === 'child') return sendJson(res, 403, { error: 'Child account profiles are managed by a parent or guardian.' });
   if (req.method === 'GET' && urlPath === '/api/account') {
     if (!accountAuth) return sendJson(res, 401, { error: 'Sign in is required.' });
     return sendJson(res, 200, { profile: accountProfile(accountAuth.user) });
@@ -354,9 +350,33 @@ async function handleApi(req, res, urlPath) {
     saveUsers(); return sendJson(res, 200, { ok: true });
   }
 
+  if (req.method === 'POST' && urlPath === '/api/progress') {
+    const auth = getSession(req);
+    if (!auth || auth.user.accountType !== 'child') return sendJson(res, 403, { error: 'Progress can only be recorded for an active child account.' });
+    let body;
+    try { body = await readJson(req); } catch (error) { return sendJson(res, 400, { error: error.message }); }
+    const summary = accountSupport.normalizeProgressSummary(body, WORKBOOKS);
+    if (!summary) return sendJson(res, 400, { error: 'The progress summary is invalid.' });
+    if (!(auth.user.entitlements || []).includes(summary.workbookKey)) return sendJson(res, 403, { error: 'This child does not have access to that workbook.' });
+    const lastActivity = Date.now();
+    const existing = progressSessions.find((item) => item.userId === auth.user.id && item.sessionId === summary.sessionId);
+    if (existing) Object.assign(existing, summary, { lastActivity });
+    else progressSessions.push({ userId: auth.user.id, ...summary, lastActivity });
+    saveProgress();
+    return sendJson(res, 200, { ok: true, lastActivity });
+  }
+
   if (urlPath.startsWith('/api/parent/')) {
     const auth = getSession(req);
     if (!auth || auth.user.accountType !== 'parent') return sendJson(res, 403, { error: 'Approved parent or guardian access is required.' });
+    if (req.method === 'GET' && urlPath === '/api/parent/dashboard') {
+      const children = users.filter((user) => user.accountType === 'child' && user.parentId === auth.user.id).map((user) => ({
+        id: user.id, username: user.username, firstName: user.firstName || '', surname: user.surname || '', schoolYear: user.schoolYear || '',
+        active: Boolean(user.active), approvalStatus: user.approvalStatus || 'approved',
+        sessions: progressSessions.filter((item) => item.userId === user.id).sort((a, b) => b.lastActivity - a.lastActivity).slice(0, 300)
+      }));
+      return sendJson(res, 200, { children });
+    }
     if (req.method === 'GET' && urlPath === '/api/parent/children') {
       return sendJson(res, 200, { children: users.filter((user) => user.accountType === 'child' && user.parentId === auth.user.id).map(parentChild) });
     }
@@ -375,7 +395,7 @@ async function handleApi(req, res, urlPath) {
       if (users.some((user) => user.username.toLowerCase() === username.toLowerCase())) return sendJson(res, 409, { error: 'That username is already registered.' });
       const passwordFields = await makePassword(body.password);
       if (users.some((user) => user.username.toLowerCase() === username.toLowerCase())) return sendJson(res, 409, { error: 'That username is already registered.' });
-      const child = { id: crypto.randomUUID(), username, role: 'student', accountType: 'child', parentId: auth.user.id, active: false, parentEnabled: true, adminEnabled: true, approvalStatus: 'pending',
+      const child = { id: crypto.randomUUID(), username, role: 'student', accountType: 'child', parentId: auth.user.id, active: true, parentEnabled: true, adminEnabled: true, approvalStatus: 'pending',
         entitlements: [], requestedEntitlements: [...new Set(body.requestedEntitlements)], firstName: body.firstName.trim(), surname: body.surname.trim(),
         dateOfBirth: body.dateOfBirth, address: auth.user.address || '', schoolYear: body.schoolYear, email: '', parentName: `${auth.user.firstName} ${auth.user.surname}`.trim(), parentEmail: auth.user.email || '',
         ...passwordFields, createdAt: new Date().toISOString() };
@@ -399,12 +419,12 @@ async function handleApi(req, res, urlPath) {
       const differsFromGranted = JSON.stringify([...uniqueRequested].sort()) !== JSON.stringify([...(child.entitlements || [])].sort());
       child.firstName = firstName; child.surname = surname; child.dateOfBirth = dateOfBirth; child.schoolYear = schoolYear; child.requestedEntitlements = uniqueRequested; child.parentEnabled = enabled;
       child.accessRequestStatus = child.approvalStatus === 'approved' && differsFromGranted ? 'pending' : 'none';
-      child.active = Boolean(enabled && child.adminEnabled !== false && child.approvalStatus === 'approved'); saveUsers(); return sendJson(res, 200, { child: parentChild(child) });
+      child.active = Boolean(enabled && child.adminEnabled !== false && child.parentId); saveUsers(); return sendJson(res, 200, { child: parentChild(child) });
     }
     if (childMatch && req.method === 'DELETE') {
       const child = users.find((user) => user.id === childMatch[1] && user.parentId === auth.user.id && user.accountType === 'child');
       if (!child) return sendJson(res, 404, { error: 'Child account not found.' });
-      users = users.filter((user) => user.id !== child.id); for (const [token, session] of sessions) if (session.userId === child.id) sessions.delete(token); saveUsers(); return sendJson(res, 200, { ok: true });
+      users = users.filter((user) => user.id !== child.id); progressSessions = progressSessions.filter((item) => item.userId !== child.id); saveProgress(); for (const [token, session] of sessions) if (session.userId === child.id) sessions.delete(token); saveUsers(); return sendJson(res, 200, { ok: true });
     }
     const childPassword = urlPath.match(/^\/api\/parent\/children\/([0-9a-f-]+)\/password$/i);
     if (childPassword && req.method === 'POST') {
@@ -471,6 +491,15 @@ async function handleApi(req, res, urlPath) {
     if (req.method === 'GET' && urlPath === '/api/admin/users') {
       return sendJson(res, 200, { users: users.map(adminUser) });
     }
+    if (req.method === 'GET' && urlPath === '/api/admin/progress') {
+      const children = users.filter((user) => user.accountType === 'child').map((user) => {
+        const parent = users.find((item) => item.id === user.parentId && item.accountType === 'parent');
+        return { id: user.id, username: user.username, firstName: user.firstName || '', surname: user.surname || '', schoolYear: user.schoolYear || '',
+          parentId: user.parentId || '', parentName: parent ? `${parent.firstName || ''} ${parent.surname || ''}`.trim() || parent.username : 'Unassigned',
+          sessions: progressSessions.filter((item) => item.userId === user.id).sort((a, b) => b.lastActivity - a.lastActivity).slice(0, 300) };
+      });
+      return sendJson(res, 200, { children });
+    }
 
     const approveMatch = urlPath.match(/^\/api\/admin\/registrations\/([0-9a-f-]+)\/approve$/i);
     if (req.method === 'POST' && approveMatch) {
@@ -479,6 +508,7 @@ async function handleApi(req, res, urlPath) {
       if (!body || typeof body !== 'object' || !isAllowedEntitlementList(body.entitlements)) return sendJson(res, 400, { error: 'Select valid workbook access.' });
       const target = users.find((user) => user.id === approveMatch[1] && user.role === 'student' && (user.approvalStatus === 'pending' || user.accessRequestStatus === 'pending'));
       if (!target) return sendJson(res, 409, { error: 'This registration is no longer pending.' });
+      if (target.accountType === 'child' && !target.parentId) return sendJson(res, 400, { error: 'Link this child account to an approved parent before approval.' });
       const newApproval = target.approvalStatus === 'pending';
       if (target.accountType !== 'parent' && newApproval && !body.entitlements.length) return sendJson(res, 400, { error: 'Select at least one workbook to grant.' });
       target.approvalStatus = 'approved'; target.entitlements = [...new Set(body.entitlements)]; target.requestedEntitlements = [...target.entitlements]; target.accessRequestStatus = 'none';
@@ -521,8 +551,8 @@ async function handleApi(req, res, urlPath) {
       catch (error) { return sendJson(res, 400, { error: error.message }); }
       if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res, 400, { error: 'Request body must be an object.' });
       const username = String(body.username || '').trim();
-      const role = body.role === undefined ? 'student' : body.role;
-      if (!['student', 'admin'].includes(role)) return sendJson(res, 400, { error: 'Choose either student or administrator.' });
+      const role = body.role;
+      if (role !== 'admin') return sendJson(res, 400, { error: 'Only administrators can be created here. Parents create child accounts from their portal.' });
       if (!validUsername(username)) return sendJson(res, 400, { error: 'Username must be 3–32 characters using letters, numbers, dots, underscores or hyphens.' });
       if (!validPassword(body.password)) return sendJson(res, 400, { error: 'Password must be at least 12 characters.' });
       if (users.some((item) => item.username.toLowerCase() === username.toLowerCase())) return sendJson(res, 409, { error: 'That username already exists.' });
@@ -542,6 +572,7 @@ async function handleApi(req, res, urlPath) {
       const deletedIds = new Set([target.id]);
       if (target.accountType === 'parent') users.filter((user) => user.parentId === target.id).forEach((user) => deletedIds.add(user.id));
       users = users.filter((user) => !deletedIds.has(user.id));
+      progressSessions = progressSessions.filter((item) => !deletedIds.has(item.userId)); saveProgress();
       for (const [token, session] of sessions) if (deletedIds.has(session.userId)) sessions.delete(token);
       saveUsers(); return sendJson(res, 200, { ok: true });
     }
@@ -559,6 +590,16 @@ async function handleApi(req, res, urlPath) {
       }
       if (body.entitlements !== undefined && !isAllowedEntitlementList(body.entitlements)) return sendJson(res, 400, { error: 'One or more workbook entitlements are invalid.' });
       if (body.active !== undefined && typeof body.active !== 'boolean') return sendJson(res, 400, { error: 'Active must be true or false.' });
+      let newParentId = target.parentId || null;
+      if (body.parentId !== undefined) {
+        if (target.accountType !== 'child') return sendJson(res, 400, { error: 'Only child accounts can be linked to a parent.' });
+        if (body.parentId !== null && (typeof body.parentId !== 'string' || !body.parentId)) return sendJson(res, 400, { error: 'Choose a valid parent account or leave the child unassigned.' });
+        if (body.parentId) {
+          const parent = users.find((item) => item.id === body.parentId && item.accountType === 'parent' && item.active && (item.approvalStatus || 'approved') === 'approved');
+          if (!parent) return sendJson(res, 400, { error: 'Choose an approved parent account.' });
+          newParentId = parent.id;
+        } else newParentId = null;
+      }
       if (body.email !== undefined) {
         if (!accountSupport.validEmail(body.email)) return sendJson(res, 400, { error: 'Enter a valid email address.' });
         if (users.some((item) => item.id !== target.id && (item.email || '').toLowerCase() === body.email.trim().toLowerCase())) return sendJson(res, 409, { error: 'That email address is already used by another account.' });
@@ -569,9 +610,10 @@ async function handleApi(req, res, urlPath) {
       if (body.entitlements !== undefined) target.entitlements = [...new Set(body.entitlements)];
       if (body.active !== undefined) {
         target.adminEnabled = body.active;
-        target.active = Boolean(body.active && target.parentEnabled !== false && (target.approvalStatus || 'approved') === 'approved');
+        target.active = Boolean(body.active && target.parentEnabled !== false && (target.approvalStatus || 'approved') === 'approved' && (target.accountType !== 'child' || newParentId));
         if (!target.active) for (const [token, session] of sessions) if (session.userId === target.id) sessions.delete(token);
       }
+      if (body.parentId !== undefined) { target.parentId = newParentId; if (!newParentId) { target.active = false; for (const [token, session] of sessions) if (session.userId === target.id) sessions.delete(token); } }
       saveUsers();
       return sendJson(res, 200, { user: publicUser(target) });
     }
@@ -607,13 +649,21 @@ async function main() {
     saveUsers();
   }
   if (!Array.isArray(users)) throw new Error('User store is invalid.');
+  let migratedAccounts = false;
+  try { progressSessions = JSON.parse(fs.readFileSync(PROGRESS_STORE, 'utf8')); }
+  catch (error) { if (error.code !== 'ENOENT') throw error; progressSessions = []; saveProgress(); }
+  if (!Array.isArray(progressSessions)) throw new Error('Progress store is invalid.');
   users.forEach((user) => {
     if (!user.approvalStatus) user.approvalStatus = 'approved';
     if (!Array.isArray(user.requestedEntitlements)) user.requestedEntitlements = [];
     if (!user.accountType) user.accountType = user.role === 'admin' ? 'admin' : 'learner';
+    if (user.role === 'student' && user.accountType === 'learner' && accountSupport.ageOnDate(user.dateOfBirth) < 18) {
+      user.accountType = 'child'; user.active = false; user.approvalStatus = 'pending'; user.parentId = null; user.entitlements = []; user.requestedEntitlements = []; migratedAccounts = true;
+    }
     if (user.parentEnabled === undefined) user.parentEnabled = true;
     if (user.adminEnabled === undefined) user.adminEnabled = user.approvalStatus === 'pending' ? true : Boolean(user.active);
   });
+  if (migratedAccounts) saveUsers();
 
   const bootstrapUsername = process.env.BOOTSTRAP_ADMIN_USERNAME;
   const bootstrapPassword = process.env.BOOTSTRAP_ADMIN_PASSWORD;
@@ -653,6 +703,7 @@ async function main() {
 
     if (ACCOUNT_FILES.has(urlPath)) {
       if (!auth) { res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }); res.end('Sign in is required.'); return; }
+      if (auth.user.accountType === 'child') { res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }); res.end('Child account profiles are managed by a parent or guardian.'); return; }
       return serveFile(res, ACCOUNT_FILES.get(urlPath), 'no-store');
     }
 

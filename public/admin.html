@@ -17,15 +17,6 @@
       <div class="section-head"><div><h2>Registrations awaiting approval <span id="pending-count" class="count-badge">0</span></h2><p>Review the learner’s details, then choose which workbooks to grant. Declined requests are deleted.</p></div><button id="refresh-users-pending" class="secondary" type="button">Refresh queue</button></div>
       <div id="pending-users" class="users-list"></div>
     </section>
-    <section class="panel">
-      <h2>Create a student account</h2>
-      <form id="create-user-form" class="create-form" method="post">
-        <label>Username<input name="username" required minlength="3" maxlength="32" autocomplete="off" /></label>
-        <label>Temporary password<input name="password" type="password" required minlength="12" autocomplete="new-password" /></label>
-        <fieldset><legend>Workbook access</legend><div class="entitlement-grid" data-entitlements></div></fieldset>
-        <button type="submit">Create account</button>
-      </form>
-    </section>
     <section class="panel administrator-panel">
       <h2>Add an administrator</h2>
       <p>Administrator accounts can manage users, approve parents and children, and grant workbook access. Use a unique username and a temporary password of at least 12 characters.</p>
@@ -34,6 +25,11 @@
         <label>Temporary password<input name="password" type="password" required minlength="12" autocomplete="new-password" /></label>
         <button type="submit">Create administrator</button>
       </form>
+    </section>
+    <section class="panel">
+      <div class="section-head"><div><h2>Child learning progress</h2><p>Administrator view across all child accounts and linked families.</p></div><button id="refresh-progress" class="secondary" type="button">Refresh progress</button></div>
+      <div class="admin-progress-filters"><label>Family or child<input id="admin-progress-search" type="search" placeholder="Search name, username, parent"></label><label>Workbook<select id="admin-progress-workbook"><option value="all">All workbooks</option></select></label></div>
+      <div id="admin-progress" class="users-list"></div>
     </section>
     <section class="panel">
       <div class="section-head"><div><h2>Accounts</h2><p>Changes take effect on the user’s next request.</p></div><button id="refresh-users" class="secondary" type="button">Refresh</button></div>

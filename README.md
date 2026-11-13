@@ -131,3 +131,13 @@ Never add Cloudflare tokens or passwords to a source file or commit them to GitH
 - HTML, CSS, and browser JavaScript for workbook pages
 - Node.js for optional local access server
 - Cloudflare Workers and D1 for online access management
+
+## Parent and child accounts
+
+Only an adult parent or guardian can register through the public form. They can register one to five children at once and request workbook years for each child. An administrator must approve the parent account and separately grant each child’s workbook access. Legacy under-18 learner profiles are converted to inactive child profiles by the next D1 migration; administrators can link them to an approved parent from **Manage Users** before approving them.
+
+Parent portal progress is scoped to the signed-in parent’s linked children. The site records workbook, module, completion, time, topic, and error-count summaries; answers, notes, and drawings remain in the child’s browser. New dashboard history starts after this version is deployed and children practise while signed in. The dashboard includes child, workbook, period, and topic filters. Strength and practice suggestions are shown only after at least five questions across two sessions.
+
+### Local sample families
+
+Three sample parent accounts and linked child test accounts are present in the ignored local `data/users.json` store. Their shared local-only password is `MathDemo2026!`; parent usernames are `sample_parent_1`, `sample_parent_2`, and `sample_parent_3`. The existing local test account `Test1`, if present, is linked to the first sample parent. These sample accounts are not added to Cloudflare D1 or GitHub. Do not create the sample credentials on the hosted site.

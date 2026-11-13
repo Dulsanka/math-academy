@@ -7,6 +7,8 @@
   const status = document.getElementById('admin-status');
   const usersList = document.getElementById('users-list');
   const pendingList = document.getElementById('pending-users');
+  const progressList = document.getElementById('admin-progress');
+  let cachedProgress = [];
 
   async function request(url, options) {
     const response = await fetch(url, Object.assign({ credentials: 'same-origin' }, options || {}));
@@ -57,6 +59,24 @@
       const card = document.createElement('article'); card.className = 'user-card pending-card';
       const heading = document.createElement('h3'); heading.textContent = (user.firstName + ' ' + user.surname).trim() + ' - ' + user.username;
       card.appendChild(heading);
+      if (user.accountType === 'child' && !user.parentId) {
+        const assignment = document.createElement('div'); assignment.className = 'parent-assignment';
+        const label = document.createElement('label'); label.textContent = 'Link this child to an approved parent';
+        const select = document.createElement('select'); select.append(new Option('Choose parent account', ''));
+        users.filter(function (item) { return item.accountType === 'parent' && item.active && item.approvalStatus === 'approved'; }).forEach(function (parent) {
+          select.add(new Option((parent.firstName + ' ' + parent.surname).trim() + ' · ' + parent.username, parent.id));
+        });
+        label.appendChild(select); assignment.appendChild(label);
+        const link = document.createElement('button'); link.type = 'button'; link.className = 'secondary'; link.textContent = 'Link child';
+        link.addEventListener('click', async function () {
+          if (!select.value) { setStatus('Select an approved parent first.', false); return; }
+          link.disabled = true;
+          try { await request('/api/admin/users/' + encodeURIComponent(user.id), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ parentId: select.value }) }); setStatus('Linked child to parent. Review and approve requested workbook access next.', true); await loadUsers(); }
+          catch (error) { setStatus(error.message, false); }
+          finally { link.disabled = false; }
+        });
+        assignment.appendChild(link); card.appendChild(assignment);
+      }
       addProfileDetail(card, 'Email', user.email); addProfileDetail(card, 'Date of birth', user.dateOfBirth);
       addProfileDetail(card, 'Address', user.address); addProfileDetail(card, 'School year', user.schoolYear);
       addProfileDetail(card, 'Parent or guardian', user.parentName ? user.parentName + ' (' + user.parentEmail + ')' : 'Not required');
@@ -96,6 +116,24 @@
     if (!pending.length) pendingList.textContent = 'There are no registrations or access requests waiting for review.';
   }
 
+  async function loadProgress() {
+    const result = await request('/api/admin/progress'); cachedProgress = result.children || []; renderProgress();
+  }
+  function renderProgress() {
+    const search = document.getElementById('admin-progress-search').value.trim().toLowerCase(); const workbook = document.getElementById('admin-progress-workbook').value;
+    progressList.replaceChildren(); let count=0;
+    cachedProgress.forEach(function(child){
+      const sessions=(child.sessions||[]).filter(function(item){return workbook==='all'||item.workbookKey===workbook;});
+      const label=((child.firstName+' '+child.surname)+' '+child.username+' '+child.parentName).toLowerCase();
+      if(search&&!label.includes(search))return;count++;
+      const card=document.createElement('article');card.className='user-card';const heading=document.createElement('h3');heading.textContent=((child.firstName+' '+child.surname).trim()||child.username)+' · '+child.schoolYear+' · Parent: '+child.parentName;card.appendChild(heading);
+      if(!sessions.length){const empty=document.createElement('p');empty.textContent='No recorded practice sessions for this filter.';card.appendChild(empty);}
+      sessions.slice(0,30).forEach(function(item){const row=document.createElement('p');row.className='profile-detail';const ratio=item.totalQuestions?Math.round(100*item.completedQuestions/item.totalQuestions):0;row.textContent=item.title+' · '+item.workbookKey+' · '+item.completedQuestions+'/'+item.totalQuestions+' ('+ratio+'%) · '+Math.round(item.elapsedSeconds/60)+' min · '+new Date(item.lastActivity).toLocaleString();card.appendChild(row);});
+      progressList.appendChild(card);
+    });
+    if(!count)progressList.textContent='No child accounts match this filter.';
+  }
+
   async function loadUsers() {
     const result = await request('/api/admin/users');
     renderPending(result.users);
@@ -129,6 +167,10 @@
       const access = document.createElement('div');
       access.className = 'entitlement-grid';
       makeEntitlementInputs(access, user.entitlements, 'entitlement-' + user.id);
+      let parentAssignment = null;
+      if (user.accountType === 'child') {
+        const label=document.createElement('label');label.className='parent-assignment';label.textContent='Linked parent account';parentAssignment=document.createElement('select');parentAssignment.append(new Option('Unassigned (sign-in disabled)',''));result.users.filter(function(item){return item.accountType==='parent'&&item.active&&item.approvalStatus==='approved';}).forEach(function(parent){parentAssignment.add(new Option((parent.firstName+' '+parent.surname).trim()+' · '+parent.username,parent.id));});parentAssignment.value=user.parentId||'';label.append(parentAssignment);card.appendChild(label);
+      }
       const actions = document.createElement('div');
       actions.className = 'user-actions';
       const save = document.createElement('button');
@@ -138,7 +180,7 @@
         try {
           await request('/api/admin/users/' + encodeURIComponent(user.id), {
             method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ entitlements: checkedValues(access), active: active.checked })
+            body: JSON.stringify(Object.assign({ entitlements: checkedValues(access), active: active.checked }, parentAssignment ? { parentId: parentAssignment.value || null } : {}))
           });
           setStatus('Updated access for ' + user.username + '.', true);
         } catch (error) { setStatus(error.message, false); }
@@ -189,25 +231,6 @@
     if (!result.users.some(function (user) { return user.approvalStatus !== 'pending' && user.accessRequestStatus !== 'pending'; })) usersList.textContent = 'No approved accounts have been created yet.';
   }
 
-  makeEntitlementInputs(document.querySelector('[data-entitlements]'), [], 'new-entitlement');
-  document.getElementById('create-user-form').addEventListener('submit', async function (event) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const button = form.querySelector('button[type="submit"]');
-    button.disabled = true;
-    try {
-      const result = await request('/api/admin/users', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: form.username.value.trim(), password: form.password.value, entitlements: checkedValues(form.querySelector('[data-entitlements]')) })
-      });
-      form.reset();
-      makeEntitlementInputs(form.querySelector('[data-entitlements]'), [], 'new-entitlement');
-      setStatus('Created account ' + result.user.username + '.', true);
-      await loadUsers();
-    } catch (error) { setStatus(error.message, false); }
-    finally { button.disabled = false; }
-  });
-
   document.getElementById('create-admin-form').addEventListener('submit', async function (event) {
     event.preventDefault(); const form = event.currentTarget; const button = form.querySelector('button[type="submit"]'); button.disabled = true;
     try {
@@ -223,11 +246,14 @@
   document.getElementById('refresh-users-pending').addEventListener('click', function () {
     loadUsers().then(function () { setStatus('', true); }).catch(function (error) { setStatus(error.message, false); });
   });
+  const progressWorkbook=document.getElementById('admin-progress-workbook');WORKBOOKS.forEach(function(entry){progressWorkbook.add(new Option(entry[1],entry[0]));});
+  document.getElementById('refresh-progress').addEventListener('click',function(){loadProgress().catch(function(error){setStatus(error.message,false);});});
+  document.getElementById('admin-progress-search').addEventListener('input',renderProgress);progressWorkbook.addEventListener('change',renderProgress);
 
   request('/api/auth/me').then(function (result) {
     if (!result.authenticated || result.user.role !== 'admin') {
       window.location.replace('/'); return;
     }
-    return loadUsers();
+    return Promise.all([loadUsers(),loadProgress()]);
   }).catch(function (error) { setStatus(error.message, false); });
 })();

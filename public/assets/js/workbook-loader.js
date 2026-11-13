@@ -52,6 +52,7 @@
     window.mathAcademyProgressKey = function (key) {
       return 'mathAcademyProgress:' + encodeURIComponent(session.user.id) + ':' + key;
     };
+    if (session.user.accountType === 'child') installProgressReporter(session.user.id, isArithmetic ? 'arithmetic' : 'year' + year);
     window.mathAcademySanitizeSvg = sanitizeSvg;
     const scripts = isArithmetic ? ['/assets/js/interactive-workbook.js'] : year <= 7
       ? ['/assets/js/year' + year + '-curriculum.js', '/assets/js/curriculum-workbook.js']
@@ -68,6 +69,56 @@
     if (year >= 12 && !window.mathAcademySeniorWorkbookReady) {
       throw new Error('Senior workbook engine failed to initialize.');
     }
+  }
+
+  function installProgressReporter(userId, workbookKey) {
+    const nativeSetItem = Storage.prototype.setItem;
+    let reportTimer = 0;
+    let pendingSummary = null;
+    function sendSummary(summary) {
+      if (!summary) return;
+      fetch('/api/progress', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(summary), keepalive: true }).catch(function () {});
+    }
+    function makeSummary(storageKey, raw) {
+      let snapshot;
+      try { snapshot = JSON.parse(raw); } catch { return null; }
+      if (!snapshot || !Array.isArray(snapshot.questions) || !snapshot.questions.length) return null;
+      const moduleKey = String(snapshot.activeModuleId || snapshot.workbookOp || workbookKey).slice(0, 120);
+      const title = String(snapshot.activeModuleTitle || snapshot.workbookOp || (workbookKey === 'arithmetic' ? 'Arithmetic practice' : workbookKey.toUpperCase() + ' practice')).slice(0, 160);
+      const questions = snapshot.questions.slice(0, 25);
+      const topics = new Map();
+      let completedQuestions = 0;
+      let errorCount = 0;
+      for (const question of questions) {
+        const completed = Boolean(question && question.isCompleted);
+        if (completed) completedQuestions += 1;
+        const mistakes = question && question.wrongSteps && typeof question.wrongSteps === 'object' ? Object.keys(question.wrongSteps).length : 0;
+        errorCount += mistakes;
+        const name = String((question && question.topic) || title).slice(0, 120);
+        if (!topics.has(name)) topics.set(name, { name, totalQuestions: 0, completedQuestions: 0, errorCount: 0 });
+        const topic = topics.get(name); topic.totalQuestions += 1; topic.completedQuestions += completed ? 1 : 0; topic.errorCount += mistakes;
+      }
+      const seed = String(snapshot.seedCounter || 0);
+      const metaKey = 'mathAcademyProgressSession:' + encodeURIComponent(userId) + ':' + workbookKey + ':' + moduleKey + ':' + seed;
+      let sessionId = localStorage.getItem(metaKey);
+      if (!sessionId) { sessionId = crypto.randomUUID(); localStorage.setItem(metaKey, sessionId); }
+      return { workbookKey, sessionId, moduleKey, title, totalQuestions: questions.length,
+        completedQuestions, errorCount, elapsedSeconds: Math.max(0, Math.min(604800, Number(snapshot.elapsedSeconds) || 0)),
+        stars: Math.max(0, Math.min(1000000, Number(snapshot.stars) || 0)), topics: Array.from(topics.values()).slice(0, 25) };
+    }
+    Storage.prototype.setItem = function (key, value) {
+      nativeSetItem.call(this, key, value);
+      if (this !== window.localStorage || typeof key !== 'string' || !key.startsWith('mathAcademyProgress:' + encodeURIComponent(userId) + ':')) return;
+      const summary = makeSummary(key, String(value));
+      if (!summary) return;
+      pendingSummary = summary;
+      clearTimeout(reportTimer);
+      reportTimer = setTimeout(function () {
+        sendSummary(pendingSummary);
+        pendingSummary = null;
+      }, 600);
+    };
+    window.addEventListener('pagehide', function () { clearTimeout(reportTimer); sendSummary(pendingSummary); pendingSummary = null; }, { once: true });
   }
 
   function reportInitializationError() {

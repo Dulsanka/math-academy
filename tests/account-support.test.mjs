@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import WORKBOOKS from '../src/workbooks.mjs';
-import { ageOnDate, notificationEmail, validateParentRegistration, validateRegistration } from '../src/account-support.mjs';
+import { ageOnDate, notificationEmail, normalizeProgressSummary, validateParentRegistration, validateRegistration } from '../src/account-support.mjs';
 
 const application = {
   firstName: 'Aroha', surname: 'Learner', email: 'aroha@example.test', dateOfBirth: '2012-05-02', address: '1 Learning Road',
@@ -25,8 +25,18 @@ test('notification templates escape user data and provide expected destinations'
 });
 
 test('parent registration accepts adults and rejects underage applicants', () => {
-  const parent = { firstName: 'Mere', surname: 'Parent', email: 'mere@example.test', dateOfBirth: '1985-05-02', address: '1 Family Road, New Zealand', username: 'mere_parent', password: 'Mere-long-parent-passphrase-2026' };
-  assert.equal(validateParentRegistration(parent), null);
+  const parent = { firstName: 'Mere', surname: 'Parent', email: 'mere@example.test', dateOfBirth: '1985-05-02', address: '1 Family Road, New Zealand', username: 'mere_parent', password: 'Mere-long-parent-passphrase-2026', children: [{ firstName: 'Ari', surname: 'Parent', dateOfBirth: '2015-01-01', schoolYear: 'Year 6', username: 'ari_parent', password: 'Ari-child-passphrase-2026', requestedEntitlements: ['year6'] }] };
+  assert.equal(validateParentRegistration(parent, WORKBOOKS), null);
   assert.match(validateParentRegistration({ ...parent, dateOfBirth: '2012-05-02' }), /adult aged 18/i);
   assert.match(validateParentRegistration({ ...parent, email: 'not-an-email' }), /valid email/i);
+  assert.match(validateParentRegistration({ ...parent, children: [] }, WORKBOOKS), /between 1 and 5 children/i);
+  assert.match(validateParentRegistration({ ...parent, children: [{ ...parent.children[0], dateOfBirth: '2000-01-01' }] }, WORKBOOKS), /under 18/i);
+});
+
+test('progress summary accepts bounded topic summaries and rejects invalid values', () => {
+  const summary = { workbookKey: 'year6', sessionId: 'session-12345678', moduleKey: 'number', title: 'Number', totalQuestions: 10, completedQuestions: 4, errorCount: 2, elapsedSeconds: 300, stars: 1, topics: [{ name: 'Fractions', totalQuestions: 5, completedQuestions: 2, errorCount: 1 }] };
+  assert.deepEqual(normalizeProgressSummary(summary, WORKBOOKS), summary);
+  assert.equal(normalizeProgressSummary({ ...summary, workbookKey: 'year99' }, WORKBOOKS), null);
+  assert.equal(normalizeProgressSummary({ ...summary, completedQuestions: 11 }, WORKBOOKS), null);
+  assert.equal(normalizeProgressSummary({ ...summary, topics: [{ ...summary.topics[0], totalQuestions: 0, completedQuestions: 1 }] }, WORKBOOKS), null);
 });

@@ -33,7 +33,7 @@ export function validateRegistration(body, workbooks) {
   return null;
 }
 
-export function validateParentRegistration(body) {
+export function validateParentRegistration(body, workbooks = {}) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return 'Please complete the parent registration form.';
   if (['firstName', 'surname', 'address', 'username'].some((key) => typeof body[key] !== 'string' || !body[key].trim())) return 'Complete all required fields.';
   if (body.firstName.trim().length > 80 || body.surname.trim().length > 80 || body.address.trim().length > 500) return 'Some profile fields are too long.';
@@ -42,7 +42,45 @@ export function validateParentRegistration(body) {
   if (typeof body.password !== 'string' || body.password.length < 12 || body.password.length > 256) return 'Choose a password with at least 12 characters.';
   const age = ageOnDate(body.dateOfBirth);
   if (age === null || age < 18) return 'Parent or guardian accounts must be registered by an adult aged 18 or over.';
+  if (!Array.isArray(body.children) || body.children.length < 1 || body.children.length > 5) return 'Register between 1 and 5 children with your parent account.';
+  const usernames = new Set([body.username.trim().toLowerCase()]);
+  for (const child of body.children) {
+    if (!child || typeof child !== 'object' || Array.isArray(child)) return 'Enter each child’s details.';
+    if (['firstName', 'surname', 'schoolYear', 'username'].some((key) => typeof child[key] !== 'string' || !child[key].trim())) return 'Complete every child’s name, school year, and username.';
+    if (child.firstName.trim().length > 80 || child.surname.trim().length > 80) return 'A child name is too long.';
+    const childAge = ageOnDate(child.dateOfBirth);
+    if (childAge === null || childAge >= 18) return 'Each child account must belong to someone under 18 with a valid date of birth.';
+    if (!SCHOOL_YEARS.slice(0, 8).includes(child.schoolYear)) return 'Choose a school year from Year 6 to Year 13 for each child.';
+    if (!/^[a-zA-Z0-9._-]{3,32}$/.test(child.username.trim())) return 'Each child username must be 3-32 characters using letters, numbers, dots, underscores or hyphens.';
+    const childKey = child.username.trim().toLowerCase();
+    if (usernames.has(childKey)) return 'Parent and child usernames must all be unique.';
+    usernames.add(childKey);
+    if (typeof child.password !== 'string' || child.password.length < 12 || child.password.length > 256) return 'Each child needs an initial password of at least 12 characters.';
+    if (!Array.isArray(child.requestedEntitlements) || !child.requestedEntitlements.length || child.requestedEntitlements.length > Object.keys(workbooks).length || !child.requestedEntitlements.every((entry) => Object.hasOwn(workbooks, entry))) return 'Select one or more valid workbook years for each child.';
+  }
   return null;
+}
+
+export function normalizeProgressSummary(body, workbooks = {}) {
+  if (!body || typeof body !== 'object' || Array.isArray(body) || !Object.hasOwn(workbooks, body.workbookKey)) return null;
+  if (typeof body.sessionId !== 'string' || !/^[a-zA-Z0-9._:-]{8,128}$/.test(body.sessionId)) return null;
+  if (typeof body.moduleKey !== 'string' || !body.moduleKey.trim() || body.moduleKey.length > 120) return null;
+  if (typeof body.title !== 'string' || !body.title.trim() || body.title.length > 160) return null;
+  const integerInRange = (value, min, max) => Number.isInteger(value) && value >= min && value <= max;
+  if (!integerInRange(body.totalQuestions, 1, 25) || !integerInRange(body.completedQuestions, 0, body.totalQuestions) ||
+      !integerInRange(body.errorCount, 0, 1000) || !integerInRange(body.elapsedSeconds, 0, 604800) || !integerInRange(body.stars, 0, 1000000)) return null;
+  if (!Array.isArray(body.topics) || !body.topics.length || body.topics.length > 25) return null;
+  const topics = [];
+  for (const item of body.topics) {
+    if (!item || typeof item.name !== 'string' || !item.name.trim() || item.name.length > 120 ||
+        !integerInRange(item.totalQuestions, 0, 25) || !integerInRange(item.completedQuestions, 0, item.totalQuestions) || !integerInRange(item.errorCount, 0, 1000)) return null;
+    topics.push({ name: item.name.trim(), totalQuestions: item.totalQuestions, completedQuestions: item.completedQuestions, errorCount: item.errorCount });
+  }
+  return {
+    workbookKey: body.workbookKey, sessionId: body.sessionId, moduleKey: body.moduleKey.trim(), title: body.title.trim(),
+    totalQuestions: body.totalQuestions, completedQuestions: body.completedQuestions, errorCount: body.errorCount,
+    elapsedSeconds: body.elapsedSeconds, stars: body.stars, topics
+  };
 }
 
 function escapeHtml(value) {

@@ -110,7 +110,7 @@ test('end-to-end access, entitlements, administrator actions, and session lifecy
   assert.equal(root.status, 200);
   assert.match(root.headers.get('content-security-policy') || '', /default-src 'self'/);
   assert.match(await root.text(), /id="login-form"/);
-  assert.equal((await request('/register.html')).status, 200);
+  assert.equal((await request('/register.html')).status, 404, 'public child registration page is disabled');
   assert.equal((await request('/forgot-password.html')).status, 200);
   assert.equal((await request('/account.html')).status, 401);
   assert.equal((await request('/account.js')).status, 401);
@@ -170,7 +170,10 @@ test('end-to-end access, entitlements, administrator actions, and session lifecy
   const child = (await childCreated.json()).child;
   assert.equal(child.approvalStatus, 'pending');
   assert.deepEqual(child.entitlements, [], 'parent requests do not grant workbook access');
-  assert.equal((await signIn('qa_child', 'Qa-child-passphrase-4854')).response.status, 401, 'child sign-in remains disabled until admin approval');
+  const pendingChildLogin = await signIn('qa_child', 'Qa-child-passphrase-4854');
+  assert.equal(pendingChildLogin.response.status, 200, 'child can sign in with their own credentials immediately after registration');
+  assert.equal((await request('/6_year6_nz_mathematics_workbook.html', { cookie: pendingChildLogin.cookie })).status, 403, 'requested workbooks stay locked until admin approval');
+  assert.equal((await request('/api/parent/dashboard', { cookie: pendingChildLogin.cookie })).status, 403, 'a child cannot open a parent dashboard');
   assert.equal((await request('/api/parent/children/' + child.id, { method: 'PATCH', cookie: parentLogin.cookie, body: { requestedEntitlements: ['year6', 'year7'], enabled: true } })).status, 200);
   const pendingChild = (await (await request('/api/admin/users', { cookie: adminLogin.cookie })).json()).users.find(user => user.id === child.id);
   assert.ok(pendingChild);
@@ -179,7 +182,18 @@ test('end-to-end access, entitlements, administrator actions, and session lifecy
   assert.equal(approveChild.status, 502, 'approval is saved but configured email is required to report completion');
   const childLogin = await signIn('qa_child', 'Qa-child-passphrase-4854');
   assert.equal(childLogin.response.status, 200);
+  assert.equal((await request('/account.html', { cookie: childLogin.cookie })).status, 403, 'child cannot open a profile page');
+  assert.equal((await request('/account.js', { cookie: childLogin.cookie })).status, 403, 'child cannot load profile controls');
+  assert.equal((await request('/api/account', { cookie: childLogin.cookie })).status, 403, 'child cannot call profile APIs');
   assert.equal((await request('/6_year6_nz_mathematics_workbook.html', { cookie: childLogin.cookie })).status, 200);
+  const progress = await request('/api/progress', { method: 'POST', cookie: childLogin.cookie, body: { workbookKey: 'year6', sessionId: 'qa-session-12345678', moduleKey: 'number', title: 'Number practice', totalQuestions: 10, completedQuestions: 6, errorCount: 2, elapsedSeconds: 420, stars: 3, topics: [{ name: 'Fractions', totalQuestions: 5, completedQuestions: 4, errorCount: 1 }, { name: 'Decimals', totalQuestions: 5, completedQuestions: 2, errorCount: 1 }] } });
+  assert.equal(progress.status, 200, 'child progress summary is stored');
+  const parentDashboard = await request('/api/parent/dashboard', { cookie: parentLogin.cookie });
+  assert.equal((await parentDashboard.json()).children.find(item => item.id === child.id).sessions.length, 1);
+  const otherParentDashboard = await request('/api/parent/dashboard', { cookie: approvedParent.cookie });
+  assert.equal((await otherParentDashboard.json()).children.length, 0, 'parents cannot view another family’s progress');
+  const adminProgress = await request('/api/admin/progress', { cookie: adminLogin.cookie });
+  assert.equal((await adminProgress.json()).children.find(item => item.id === child.id).sessions.length, 1, 'admin can view all child progress');
   assert.equal((await request('/7_year7_nz_mathematics_workbook.html', { cookie: childLogin.cookie })).status, 403);
   const requestMore = await request('/api/parent/children/' + child.id, { method: 'PATCH', cookie: parentLogin.cookie, body: { requestedEntitlements: ['year6', 'year7'], enabled: true } });
   assert.equal(requestMore.status, 200);
@@ -214,53 +228,11 @@ test('end-to-end access, entitlements, administrator actions, and session lifecy
     firstName: 'Pending', surname: 'Applicant', email: 'pending@example.test', dateOfBirth: '1995-05-10', address: '1 Test Street',
     schoolYear: 'Adult / other', username: 'pending-user', password: 'Pending-user-passphrase-4872', requestedEntitlements: ['year6'], privacyAcknowledged: true
   } });
-  assert.equal(registration.status, 503, 'email settings must be configured before claiming registration succeeded');
+  assert.equal(registration.status, 403, 'public learner self-registration is disabled');
   assert.equal((await signIn('pending-user', 'Pending-user-passphrase-4872')).response.status, 401, 'failed email registration leaves no account behind');
   assert.equal((await request('/api/auth/forgot-password', { method: 'POST', body: { email: 'unknown@example.test' } })).status, 200);
 
-  const tooShort = await request('/api/admin/users', { method: 'POST', cookie: adminLogin.cookie, body: { username: 'learner', password: 'short', entitlements: ['year12'] } });
-  assert.equal(tooShort.status, 400);
-  const createdResponse = await request('/api/admin/users', { method: 'POST', cookie: adminLogin.cookie, body: { username: 'learner', password: 'Learner-passphrase-4938', entitlements: ['year12'] } });
-  assert.equal(createdResponse.status, 201);
-  const learner = (await createdResponse.json()).user;
-  assert.deepEqual(learner.entitlements, ['year12']);
-  assert.equal((await request('/api/admin/users/' + learner.id, { method: 'PATCH', cookie: adminLogin.cookie, body: { email: 'learner@example.test' } })).status, 200);
-  assert.equal((await request('/api/admin/users', { method: 'POST', cookie: adminLogin.cookie, body: { username: 'LEARNER', password: 'Another-passphrase-3920', entitlements: [] } })).status, 409);
-
-  const learnerLogin = await signIn('learner', 'Learner-passphrase-4938');
-  assert.equal(learnerLogin.response.status, 200);
-  const profileUpdate = await request('/api/account', { method: 'PATCH', cookie: learnerLogin.cookie, body: {
-    firstName: 'Learner', surname: 'Example', email: 'learner@example.test', dateOfBirth: '1995-04-20', address: '10 Academy Road',
-    schoolYear: 'Year 12', parentName: '', parentEmail: ''
-  } });
-  assert.equal(profileUpdate.status, 200);
-  assert.equal((await (await request('/api/account', { cookie: learnerLogin.cookie })).json()).profile.address, '10 Academy Road');
-  const learnerPage = await request('/8_year12_nz_mathematics_workbook.html', { cookie: learnerLogin.cookie });
-  assert.equal(learnerPage.status, 200);
-  assert.match(await learnerPage.text(), /workbook-loader\.js/);
-  assert.equal((await request('/9_year13_nz_mathematics_workbook.html', { cookie: learnerLogin.cookie })).status, 403);
-  assert.equal((await request('/assets/js/year13-curriculum.js', { cookie: learnerLogin.cookie })).status, 403);
-  assert.equal((await request('/assets/js/year12-curriculum.js', { cookie: learnerLogin.cookie })).status, 200);
-  assert.equal((await request('/api/admin/users', { cookie: learnerLogin.cookie })).status, 403);
-
-  const updated = await request('/api/admin/users/' + learner.id, { method: 'PATCH', cookie: adminLogin.cookie, body: { entitlements: ['year13'], active: true } });
-  assert.equal(updated.status, 200);
-  assert.equal((await request('/9_year13_nz_mathematics_workbook.html', { cookie: learnerLogin.cookie })).status, 200);
-  assert.equal((await request('/8_year12_nz_mathematics_workbook.html', { cookie: learnerLogin.cookie })).status, 403);
-
-  const reset = await request('/api/admin/users/' + learner.id + '/password', { method: 'POST', cookie: adminLogin.cookie, body: { password: 'New-learner-passphrase-7402' } });
-  assert.equal(reset.status, 200);
-  assert.equal((await request('/api/auth/me', { cookie: learnerLogin.cookie })).status, 200);
-  assert.equal((await (await request('/api/auth/me', { cookie: learnerLogin.cookie })).json()).authenticated, false);
-  assert.equal((await signIn('learner', 'Learner-passphrase-4938')).response.status, 401);
-  const resetLogin = await signIn('learner', 'New-learner-passphrase-7402');
-  assert.equal(resetLogin.response.status, 200);
-  const passwordChange = await request('/api/account/password', { method: 'POST', cookie: resetLogin.cookie, body: { currentPassword: 'New-learner-passphrase-7402', newPassword: 'Self-changed-passphrase-7035' } });
-  assert.equal(passwordChange.status, 200);
-  assert.equal((await request('/api/auth/me', { cookie: resetLogin.cookie })).status, 200, 'current user session remains active after password change');
-  assert.equal((await signIn('learner', 'New-learner-passphrase-7402')).response.status, 401);
-  const selfResetLogin = await signIn('learner', 'Self-changed-passphrase-7035');
-  assert.equal(selfResetLogin.response.status, 200);
+  assert.equal((await request('/api/admin/users', { method: 'POST', cookie: adminLogin.cookie, body: { username: 'learner', password: 'Learner-passphrase-4938', entitlements: ['year12'] } })).status, 400, 'admins cannot create standalone learner profiles');
 
   const admins = await (await request('/api/admin/users', { cookie: adminLogin.cookie })).json();
   const admin = admins.users.find(user => user.role === 'admin');
@@ -268,8 +240,8 @@ test('end-to-end access, entitlements, administrator actions, and session lifecy
   const lastAdmin = await request('/api/admin/users/' + admin.id, { method: 'PATCH', cookie: adminLogin.cookie, body: { active: false } });
   assert.equal(lastAdmin.status, 400);
 
-  const logout = await request('/api/auth/logout', { method: 'POST', cookie: selfResetLogin.cookie });
+  const logout = await request('/api/auth/logout', { method: 'POST', cookie: childLogin.cookie });
   assert.equal(logout.status, 200);
-  assert.equal((await (await request('/api/auth/me', { cookie: selfResetLogin.cookie })).json()).authenticated, false);
+  assert.equal((await (await request('/api/auth/me', { cookie: childLogin.cookie })).json()).authenticated, false);
 });
 

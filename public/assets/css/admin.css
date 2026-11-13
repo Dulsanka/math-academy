@@ -43,3 +43,4 @@ input[type=email], textarea, select { width: 100%; padding: 10px; border: 1px so
 .profile-detail strong { color: #1e293b; }
 button.danger { background: #fff; border: 1px solid #fecaca; color: #b91c1c; }
 @media (max-width: 650px) { .admin-header, .section-head { align-items: flex-start; flex-direction: column; }.create-form { grid-template-columns: 1fr; }.reset-row, .email-row { align-items: stretch; flex-direction: column; } }
+.admin-progress-filters{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin:14px 0}.parent-assignment{max-width:420px;margin:12px 0}@media(max-width:650px){.admin-progress-filters{grid-template-columns:1fr}}

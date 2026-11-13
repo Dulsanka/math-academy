@@ -30,7 +30,11 @@
           const allowed = key === 'home' || allowedWorkbooks.has(entitlement);
           el.classList.toggle('hidden', !allowed);
         });
-        document.getElementById('no-workbooks-message').classList.toggle('hidden', allowedWorkbooks.size > 0);
+        const noWorkbooksMessage = document.getElementById('no-workbooks-message');
+        noWorkbooksMessage.textContent = payload.user && payload.user.accountType === 'child'
+          ? 'Your sign-in is ready. Your parent or guardian requested workbook access; an administrator must approve each workbook before it appears here.'
+          : 'No workbooks are assigned to this account yet. Ask your academy administrator to grant access.';
+        noWorkbooksMessage.classList.toggle('hidden', allowedWorkbooks.size > 0);
         document.getElementById('btn-admin-users').classList.toggle('hidden', !payload.user || payload.user.role !== 'admin');
         document.getElementById('btn-parent-portal').classList.toggle('hidden', !payload.user || payload.user.accountType !== 'parent');
         loginStatus.textContent = '';
@@ -54,7 +58,15 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ username: loginForm.username.value, password: loginForm.password.value })
           });
+          const selectedType = loginForm.elements.accountType.value;
+          const actualType = payload.user && payload.user.role === 'admin' ? 'admin' : payload.user && payload.user.accountType === 'parent' ? 'parent' : 'child';
+          if (selectedType !== actualType) {
+            await authRequest('/api/auth/logout', { method: 'POST' });
+            throw new Error('These credentials belong to a ' + actualType + ' account. Choose the matching sign-in option.');
+          }
           loginForm.reset();
+          if (actualType === 'parent') { window.location.assign('/parent.html'); return; }
+          if (actualType === 'admin') { window.location.assign('/admin.html'); return; }
           applyEntitlements(payload);
         } catch (error) { loginStatus.textContent = error.message; }
         finally { submit.disabled = false; }

@@ -15,7 +15,13 @@
     <form id="login-form" class="auth-card" method="post">
       <div class="auth-mark">NZ∑</div>
       <h2 id="auth-title">Welcome back</h2>
-      <p>Sign in to open the workbooks assigned to your account.</p>
+      <p id="login-prompt">Choose your account type, then sign in. Children use their own username and password.</p>
+      <fieldset class="login-type-picker" aria-label="Account type">
+        <legend>Sign in as</legend>
+        <label><input type="radio" name="accountType" value="parent" checked> Parent</label>
+        <label><input type="radio" name="accountType" value="child"> Child</label>
+        <label><input type="radio" name="accountType" value="admin"> Admin</label>
+      </fieldset>
       <label for="login-username">Username</label>
       <input id="login-username" name="username" type="text" autocomplete="username" required maxlength="32" />
       <label for="login-password">Password</label>
@@ -23,7 +29,7 @@
       <button type="submit" class="auth-submit">Sign in</button>
       <div id="login-status" class="auth-status" role="status" aria-live="polite"></div>
     </form>
-      <p class="auth-links"><a href="/register.html">Create a learner account</a><a href="/parent-register.html">Parent / guardian account</a><a href="/forgot-password.html">Forgot your password?</a></p>
+      <p class="auth-links"><a href="/parent-register.html">Parent / guardian account</a><a href="/forgot-password.html">Forgot your password?</a></p>
       </div>
     </div>
   </section>
