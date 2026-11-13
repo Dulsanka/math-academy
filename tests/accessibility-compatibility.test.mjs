@@ -51,6 +51,7 @@ test('login watermark preview offers four local, persistent design choices', () 
   assert.deepEqual(choices, ['fern', 'stars', 'contours', 'pohutukawa']);
   const script = read('assets/js/site.js');
   assert.match(script, /get\('designPreview'\) === '1'/, 'design controls are limited to the preview URL');
+  assert.match(script, /if \(designPreviewMode\) \{\s*showSignedOut\(\);/, 'preview remains visible even when a login session exists');
   assert.match(script, /math-academy-nz-design-preview/);
   for (const asset of ['silver-fern.svg', 'southern-cross.svg', 'aotearoa-contours.svg', 'pohutukawa.svg']) {
     assert.ok(fs.existsSync(path.join(publicRoot, 'assets', 'images', 'nz-watermarks', asset)), `${asset} watermark exists`);

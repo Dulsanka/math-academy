@@ -6,6 +6,7 @@
       const designOption = document.getElementById('nz-design-option');
       const designDescription = document.getElementById('nz-design-description');
       const welcomeHero = document.querySelector('.welcome-hero');
+      const designPreviewMode = new URLSearchParams(window.location.search).get('designPreview') === '1';
       const allowedWorkbooks = new Set();
       let signedIn = false;
 
@@ -24,7 +25,7 @@
         try { window.localStorage.setItem('math-academy-nz-design-preview', design); } catch (_) { /* Preview still works when storage is unavailable. */ }
       }
 
-      if (new URLSearchParams(window.location.search).get('designPreview') === '1') {
+      if (designPreviewMode) {
         designPreview.hidden = false;
         let savedDesign = 'fern';
         try { savedDesign = window.localStorage.getItem('math-academy-nz-design-preview') || savedDesign; } catch (_) { /* Use the default preview. */ }
@@ -107,14 +108,18 @@
         showSignedOut();
       });
 
-      authRequest('/api/auth/me').then(function (payload) {
-        if (payload.authenticated && payload.user && payload.user.role === 'admin') { window.location.replace('/admin.html'); return; }
-        if (payload.authenticated) applyEntitlements(payload);
-        else showSignedOut();
-      }).catch(function () {
+      if (designPreviewMode) {
         showSignedOut();
-        loginStatus.textContent = 'The access service is unavailable. Please try again later.';
-      });
+      } else {
+        authRequest('/api/auth/me').then(function (payload) {
+          if (payload.authenticated && payload.user && payload.user.role === 'admin') { window.location.replace('/admin.html'); return; }
+          if (payload.authenticated) applyEntitlements(payload);
+          else showSignedOut();
+        }).catch(function () {
+          showSignedOut();
+          loginStatus.textContent = 'The access service is unavailable. Please try again later.';
+        });
+      }
 
       const WORKBOOK_FILES = {
         wb_arith: '/1_interactive_math_workbook.html',
