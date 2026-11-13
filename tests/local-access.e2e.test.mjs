@@ -151,7 +151,7 @@ test('end-to-end access, entitlements, administrator actions, and session lifecy
   assert.equal((await request('/admin.html', { cookie: adminLogin.cookie })).status, 200);
   assert.equal((await request('/account.html', { cookie: adminLogin.cookie })).status, 200);
   assert.match(await (await request('/account.html', { cookie: adminLogin.cookie })).text(), /src="\/account\.js"/);
-  assert.match(await (await request('/account.js', { cookie: adminLogin.cookie })).text(), /admin-email-panel/);
+  assert.match(await (await request('/account.js', { cookie: adminLogin.cookie })).text(), /adminEmailPassword/);
   const addedAdmin = await request('/api/admin/users', { method: 'POST', cookie: adminLogin.cookie, body: { username: 'qa_admin_two', password: 'Qa-second-admin-passphrase-4853', role: 'admin' } });
   assert.equal(addedAdmin.status, 201);
   assert.equal((await addedAdmin.json()).user.role, 'admin');
