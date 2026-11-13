@@ -299,6 +299,21 @@
   document.getElementById('child-entitlements').replaceWith(entitlementChecks([], 'new-child-entitlement'));
   document.querySelector('#add-child-form fieldset .choice-grid').id = 'child-entitlements';
 
+  function showParentPage() {
+    const hash = (window.location.hash || '#dashboard').slice(1);
+    const aliases = { 'parent-portal': 'children', 'dashboard-title': 'dashboard', 'add-child-title': 'add-child' };
+    const candidate = aliases[hash] || hash;
+    const allowed = ['dashboard', 'children', 'add-child'];
+    const active = allowed.includes(candidate) ? candidate : 'dashboard';
+    document.querySelectorAll('[data-parent-view]').forEach(function (view) { view.hidden = view.dataset.parentView !== active; });
+    document.querySelectorAll('[data-parent-page]').forEach(function (link) {
+      if (link.dataset.parentPage === active) link.setAttribute('aria-current', 'page');
+      else link.removeAttribute('aria-current');
+    });
+  }
+  window.addEventListener('hashchange', showParentPage);
+  showParentPage();
+
   request('/api/auth/me').then(function (data) {
     if (!data.authenticated || data.user.accountType !== 'parent') { window.location.replace('/'); return; }
     return Promise.all([loadChildren(), loadDashboard()]);

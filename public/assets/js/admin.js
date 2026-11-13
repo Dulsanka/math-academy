@@ -8,8 +8,6 @@
   const adminsList = document.getElementById('admins-list');
   const parentAccountsList = document.getElementById('parent-accounts-list');
   const pendingList = document.getElementById('pending-users');
-  const progressList = document.getElementById('admin-progress');
-  let cachedProgress = [];
 
   async function request(url, options) {
     const response = await fetch(url, Object.assign({ credentials: 'same-origin' }, options || {}));
@@ -127,24 +125,6 @@
     if (!pending.length) pendingList.textContent = 'There are no registrations or access requests waiting for review.';
   }
 
-  async function loadProgress() {
-    const result = await request('/api/admin/progress'); cachedProgress = result.children || []; renderProgress();
-  }
-  function renderProgress() {
-    const search = document.getElementById('admin-progress-search').value.trim().toLowerCase(); const workbook = document.getElementById('admin-progress-workbook').value;
-    progressList.replaceChildren(); let count=0;
-    cachedProgress.forEach(function(child){
-      const sessions=(child.sessions||[]).filter(function(item){return workbook==='all'||item.workbookKey===workbook;});
-      const label=((child.firstName+' '+child.surname)+' '+child.username+' '+child.parentName).toLowerCase();
-      if(search&&!label.includes(search))return;count++;
-      const card=document.createElement('article');card.className='user-card';const heading=document.createElement('h3');heading.textContent=((child.firstName+' '+child.surname).trim()||child.username)+' · '+child.schoolYear+' · Parent: '+child.parentName;card.appendChild(heading);
-      if(!sessions.length){const empty=document.createElement('p');empty.textContent='No recorded practice sessions for this filter.';card.appendChild(empty);}
-      sessions.slice(0,30).forEach(function(item){const row=document.createElement('p');row.className='profile-detail';const ratio=item.totalQuestions?Math.round(100*item.completedQuestions/item.totalQuestions):0;row.textContent=item.title+' · '+item.workbookKey+' · '+item.completedQuestions+'/'+item.totalQuestions+' ('+ratio+'%) · '+Math.round(item.elapsedSeconds/60)+' min · '+new Date(item.lastActivity).toLocaleString();card.appendChild(row);});
-      progressList.appendChild(card);
-    });
-    if(!count)progressList.textContent='No child accounts match this filter.';
-  }
-
   function actionButton(label, className, handler) {
     const button = document.createElement('button'); button.type = 'button'; button.textContent = label; button.className = className || 'secondary';
     button.addEventListener('click', async function () { button.disabled = true; try { await handler(); } catch (error) { setStatus(error.message, false); } finally { button.disabled = false; } }); return button;
@@ -254,22 +234,23 @@
   document.getElementById('refresh-admins').addEventListener('click', refreshUsers);
   document.getElementById('refresh-accounts').addEventListener('click', refreshUsers);
   document.getElementById('refresh-users-pending').addEventListener('click', refreshUsers);
+  document.getElementById('admin-sign-out').addEventListener('click', async function (event) {
+    const button = event.currentTarget; button.disabled = true;
+    try { await request('/api/auth/logout', { method: 'POST' }); window.location.replace('/'); }
+    catch (error) { setStatus(error.message, false); button.disabled = false; }
+  });
   function showAdminPage() {
     const page = (window.location.hash || '#admins').slice(1);
-    const valid = ['admins', 'preapproved-parents', 'registrations', 'accounts', 'progress'];
+    const valid = ['admins', 'preapproved-parents', 'registrations', 'accounts'];
     const active = valid.includes(page) ? page : 'admins';
     document.querySelectorAll('.admin-view').forEach(function (view) { view.hidden = view.id !== 'view-' + active; });
     document.querySelectorAll('[data-admin-page]').forEach(function (link) { if (link.dataset.adminPage === active) link.setAttribute('aria-current', 'page'); else link.removeAttribute('aria-current'); });
   }
   window.addEventListener('hashchange', showAdminPage); showAdminPage();
-  const progressWorkbook=document.getElementById('admin-progress-workbook');WORKBOOKS.forEach(function(entry){progressWorkbook.add(new Option(entry[1],entry[0]));});
-  document.getElementById('refresh-progress').addEventListener('click',function(){loadProgress().catch(function(error){setStatus(error.message,false);});});
-  document.getElementById('admin-progress-search').addEventListener('input',renderProgress);progressWorkbook.addEventListener('change',renderProgress);
-
   request('/api/auth/me').then(function (result) {
     if (!result.authenticated || result.user.role !== 'admin') {
       window.location.replace('/'); return;
     }
-    return Promise.all([loadUsers(),loadProgress()]);
+    return loadUsers();
   }).catch(function (error) { setStatus(error.message, false); });
 })();

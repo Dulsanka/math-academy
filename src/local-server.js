@@ -109,15 +109,18 @@ function localEmailEnv() {
 }
 
 async function sendAccountInvitation(user, appUrl) {
+  const isAdministrator = user.role === 'admin' || user.accountType === 'admin';
+  const expiresInMs = isAdministrator ? 24 * 60 * 60 * 1000 : 30 * 60 * 1000;
+  const expiryLabel = isAdministrator ? '24 hours' : '30 minutes';
   const token = crypto.randomBytes(32).toString('hex');
   user.resetTokenHash = crypto.createHash('sha256').update(token).digest('hex');
-  user.resetExpiresAt = Date.now() + 30 * 60 * 1000;
+  user.resetExpiresAt = Date.now() + expiresInMs;
   user.resetRequestedAt = Date.now();
   saveUsers();
   const setupUrl = new URL(`/reset-password.html?token=${token}`, appUrl).toString();
   const results = await Promise.allSettled([
     accountSupport.sendEmail(localEmailEnv(), user.email, accountSupport.notificationEmail('account-username', user, appUrl)),
-    accountSupport.sendEmail(localEmailEnv(), user.email, accountSupport.notificationEmail('account-password-setup', user, setupUrl))
+    accountSupport.sendEmail(localEmailEnv(), user.email, accountSupport.notificationEmail('account-password-setup', { ...user, setupExpiryLabel: expiryLabel }, setupUrl))
   ]);
   const failed = results.filter((result) => result.status === 'rejected');
   if (failed.length) throw new Error(`${failed.length} of the two account setup emails could not be sent.`);

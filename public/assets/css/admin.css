@@ -45,6 +45,7 @@ button.danger { background: #fff; border: 1px solid #fecaca; color: #b91c1c; }
 @media (max-width: 650px) { .admin-header, .section-head { align-items: flex-start; flex-direction: column; }.create-form { grid-template-columns: 1fr; }.reset-row, .email-row { align-items: stretch; flex-direction: column; } }
 .admin-progress-filters{display:grid;grid-template-columns:2fr 1fr;gap:14px;margin:14px 0}.parent-assignment{max-width:420px;margin:12px 0}@media(max-width:650px){.admin-progress-filters{grid-template-columns:1fr}}
 .admin-nav { display:flex; gap:8px; flex-wrap:wrap; margin:18px 0 12px; padding:8px; border:1px solid #dbe3ed; border-radius:14px; background:#fff; }
+.admin-header-actions { display:flex; align-items:center; gap:16px; flex-shrink:0; }
 .admin-nav a { display:inline-flex; align-items:center; gap:4px; padding:10px 13px; border-radius:9px; color:#334155; font-weight:750; text-decoration:none; }
 .admin-nav a:hover, .admin-nav a[aria-current="page"] { background:#eaf1ff; color:#1d4ed8; }
 .admin-nav .count-badge { min-width:22px; height:22px; margin:0; font-size:.75rem; }
@@ -61,4 +62,4 @@ button.danger { background: #fff; border: 1px solid #fecaca; color: #b91c1c; }
 .child-account-card { display:grid; gap:10px; margin:12px 0; padding:14px; border:1px solid #dbe3ed; border-radius:10px; background:#f8fafc; }
 .child-account-card h4 { margin:0; }
 .child-account-card button { justify-self:start; }
-@media(max-width:650px){.admin-nav{display:grid;grid-template-columns:1fr 1fr}.admin-nav a{padding:9px}.parent-account summary{align-items:flex-start;flex-direction:column;gap:5px}}
+@media(max-width:650px){.admin-nav{display:grid;grid-template-columns:1fr 1fr}.admin-nav a{padding:9px}.parent-account summary{align-items:flex-start;flex-direction:column;gap:5px}.admin-header-actions{width:100%;justify-content:space-between}}

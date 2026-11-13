@@ -161,16 +161,19 @@ async function derivePassword(password, saltHex) {
 
 async function sendAccountInvitation(env, user, appUrl) {
   const now = Date.now();
+  const isAdministrator = user.role === 'admin' || user.account_type === 'admin' || user.accountType === 'admin';
+  const expiresInMs = isAdministrator ? 24 * 60 * 60 * 1000 : 30 * 60 * 1000;
+  const expiryLabel = isAdministrator ? '24 hours' : '30 minutes';
   const token = randomHex(32);
   const tokenHash = await digestHex(token);
   await env.DB.batch([
     env.DB.prepare('DELETE FROM password_resets WHERE user_id = ? OR expires_at <= ?').bind(user.id, now),
-    env.DB.prepare('INSERT INTO password_resets (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)').bind(tokenHash, user.id, now + 30 * 60 * 1000, now)
+    env.DB.prepare('INSERT INTO password_resets (token_hash, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)').bind(tokenHash, user.id, now + expiresInMs, now)
   ]);
   const setupUrl = new URL(`/reset-password.html?token=${token}`, appUrl).toString();
   const deliveries = await Promise.allSettled([
     sendEmail(env, user.email, notificationEmail('account-username', user, appUrl)),
-    sendEmail(env, user.email, notificationEmail('account-password-setup', user, setupUrl))
+    sendEmail(env, user.email, notificationEmail('account-password-setup', { ...user, setupExpiryLabel: expiryLabel }, setupUrl))
   ]);
   const failed = deliveries.filter((result) => result.status === 'rejected');
   if (failed.length) throw new Error(`Account created, but ${failed.length} of the two account setup emails could not be sent.`);

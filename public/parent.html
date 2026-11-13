@@ -17,12 +17,18 @@
     <h1>See the progress. Celebrate the effort.</h1>
     <p>Explore each child’s recorded maths practice, notice what is going well, and choose a useful next step together.</p>
     <div class="hero-actions">
-      <a class="parent-portal-button" href="#parent-portal">👨‍👩‍👧 Open Parent Portal <span>Manage children &amp; workbook requests</span></a>
+      <a class="parent-portal-button" href="#children">👨‍👩‍👧 Open Parent Portal <span>Manage children &amp; workbook requests</span></a>
       <span class="privacy-chip">Private family view · progress summaries only</span>
     </div>
   </section>
 
-  <section class="form-panel dashboard-panel" aria-labelledby="dashboard-title">
+  <nav class="parent-nav" aria-label="Parent portal sections">
+    <a href="#dashboard" data-parent-page="dashboard">Family dashboard</a>
+    <a href="#children" data-parent-page="children">Children &amp; workbooks</a>
+    <a href="#add-child" data-parent-page="add-child">Add a child</a>
+  </nav>
+
+  <section id="dashboard" class="form-panel dashboard-panel parent-view" data-parent-view="dashboard" aria-labelledby="dashboard-title">
     <div class="section-head">
       <div><p class="eyebrow dashboard-kicker">FAMILY OVERVIEW</p><h2 id="dashboard-title">Children’s learning dashboard</h2><p>Filter the practice records by child, workbook, period, or topic.</p></div>
       <button class="secondary-button" id="refresh-dashboard" type="button">↻ Refresh progress</button>
@@ -57,14 +63,14 @@
     <p class="data-note">Progress comes from saved practice summaries. It may not include work done offline, and it should be read as a snapshot—not a judgement of a child’s potential.</p>
   </section>
 
-  <section id="parent-portal" class="form-panel portal-panel" aria-labelledby="portal-title">
-    <div class="portal-heading"><div><p class="eyebrow dashboard-kicker">PARENT PORTAL</p><h2 id="portal-title">Manage children &amp; workbook requests</h2><p>Add children, update requested workbooks, manage sign-in, reset passwords, or remove an account.</p></div><a class="secondary-button" href="#dashboard-title">↑ Back to dashboard</a></div>
+  <section id="parent-portal" class="form-panel portal-panel parent-view" data-parent-view="children" aria-labelledby="portal-title" hidden>
+    <div class="portal-heading"><div><p class="eyebrow dashboard-kicker">PARENT PORTAL</p><h2 id="portal-title">Manage children &amp; workbook requests</h2><p>Add children, update requested workbooks, manage sign-in, reset passwords, or remove an account.</p></div><a class="secondary-button" href="#dashboard">↑ Back to dashboard</a></div>
     <div class="section-head"><div><h3>Child accounts</h3><p>Workbook requests do not grant access; an administrator approves each child’s access.</p></div><button class="secondary-button" id="refresh-children" type="button">↻ Refresh children</button></div>
     <div id="parent-status" class="form-status" role="status" aria-live="polite"></div>
     <div id="children-list" class="children-list"></div>
   </section>
 
-  <section class="form-panel" aria-labelledby="add-child-title">
+  <section id="add-child-view" class="form-panel parent-view" data-parent-view="add-child" aria-labelledby="add-child-title" hidden>
     <h2 id="add-child-title">Add a child</h2>
     <p>The address and parent contact details are inherited from your approved account. Use a unique username and share the initial password securely.</p>
     <form id="add-child-form">
