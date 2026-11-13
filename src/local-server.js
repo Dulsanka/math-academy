@@ -76,7 +76,7 @@ function adminUser(user) {
   return {
     ...publicUser(user), approvalStatus: user.approvalStatus || 'approved', firstName: user.firstName || '', surname: user.surname || '',
     email: user.email || '', dateOfBirth: user.dateOfBirth || '', address: user.address || '', schoolYear: user.schoolYear || '',
-    requestedEntitlements: user.requestedEntitlements || [], parentName: user.parentName || '', parentEmail: user.parentEmail || '', createdAt: user.createdAt
+    requestedEntitlements: user.requestedEntitlements || [], accessRequestStatus: user.accessRequestStatus || 'none', parentName: user.parentName || '', parentEmail: user.parentEmail || '', createdAt: user.createdAt
   };
 }
 
@@ -87,7 +87,7 @@ function accountProfile(user) {
 
 function parentChild(user) {
   return { id: user.id, username: user.username, firstName: user.firstName || '', surname: user.surname || '', dateOfBirth: user.dateOfBirth || '',
-    schoolYear: user.schoolYear || '', approvalStatus: user.approvalStatus || 'approved', enabled: user.parentEnabled !== false,
+    schoolYear: user.schoolYear || '', approvalStatus: user.approvalStatus || 'approved', accessRequestStatus: user.accessRequestStatus || 'none', enabled: user.parentEnabled !== false,
     entitlements: [...(user.entitlements || [])], requestedEntitlements: [...(user.requestedEntitlements || [])] };
 }
 
@@ -392,7 +392,10 @@ async function handleApi(req, res, urlPath) {
       if (!firstName || firstName.length > 80 || !surname || surname.length > 80) return sendJson(res, 400, { error: 'Enter the child’s first name and surname.' });
       const age = accountSupport.ageOnDate(dateOfBirth); if (age === null || age >= 18) return sendJson(res, 400, { error: 'A child account must have a valid date of birth for someone under 18.' });
       if (!accountSupport.SCHOOL_YEARS.slice(0, 8).includes(schoolYear) || !isAllowedEntitlementList(requested)) return sendJson(res, 400, { error: 'Choose a valid school year and valid workbook requests.' });
-      child.firstName = firstName; child.surname = surname; child.dateOfBirth = dateOfBirth; child.schoolYear = schoolYear; child.requestedEntitlements = [...new Set(requested)]; child.parentEnabled = enabled;
+      const uniqueRequested = [...new Set(requested)];
+      const differsFromGranted = JSON.stringify([...uniqueRequested].sort()) !== JSON.stringify([...(child.entitlements || [])].sort());
+      child.firstName = firstName; child.surname = surname; child.dateOfBirth = dateOfBirth; child.schoolYear = schoolYear; child.requestedEntitlements = uniqueRequested; child.parentEnabled = enabled;
+      child.accessRequestStatus = child.approvalStatus === 'approved' && differsFromGranted ? 'pending' : 'none';
       child.active = Boolean(enabled && child.adminEnabled !== false && child.approvalStatus === 'approved'); saveUsers(); return sendJson(res, 200, { child: parentChild(child) });
     }
     if (childMatch && req.method === 'DELETE') {
@@ -471,10 +474,13 @@ async function handleApi(req, res, urlPath) {
       let body;
       try { body = await readJson(req); } catch (error) { return sendJson(res, 400, { error: error.message }); }
       if (!body || typeof body !== 'object' || !isAllowedEntitlementList(body.entitlements)) return sendJson(res, 400, { error: 'Select valid workbook access.' });
-      const target = users.find((user) => user.id === approveMatch[1] && user.approvalStatus === 'pending' && user.role === 'student');
+      const target = users.find((user) => user.id === approveMatch[1] && user.role === 'student' && (user.approvalStatus === 'pending' || user.accessRequestStatus === 'pending'));
       if (!target) return sendJson(res, 409, { error: 'This registration is no longer pending.' });
-      if (target.accountType !== 'parent' && !body.entitlements.length) return sendJson(res, 400, { error: 'Select at least one workbook to grant.' });
-      target.approvalStatus = 'approved'; target.entitlements = [...new Set(body.entitlements)]; target.active = target.parentEnabled !== false && target.adminEnabled !== false; saveUsers();
+      const newApproval = target.approvalStatus === 'pending';
+      if (target.accountType !== 'parent' && newApproval && !body.entitlements.length) return sendJson(res, 400, { error: 'Select at least one workbook to grant.' });
+      target.approvalStatus = 'approved'; target.entitlements = [...new Set(body.entitlements)]; target.requestedEntitlements = [...target.entitlements]; target.accessRequestStatus = 'none';
+      if (newApproval) target.active = target.parentEnabled !== false && target.adminEnabled !== false;
+      saveUsers();
       const appUrl = process.env.PUBLIC_APP_URL || `http://${req.headers.host || 'localhost:3000'}`;
       try { await accountSupport.sendToApplicantAndGuardian(localEmailEnv(), target, accountSupport.notificationEmail('approved', target, appUrl), `approval-${target.id}`); }
       catch (error) { return sendJson(res, 502, { error: `Access was approved, but the notification could not be sent. Use Send approval email to retry. ${error.message}` }); }
@@ -486,6 +492,14 @@ async function handleApi(req, res, urlPath) {
       const target = users.find((user) => user.id === rejectMatch[1] && user.approvalStatus === 'pending' && user.role === 'student');
       if (!target) return sendJson(res, 409, { error: 'This registration is no longer pending.' });
       users = users.filter((user) => user.id !== target.id); saveUsers(); return sendJson(res, 200, { ok: true });
+    }
+
+    const rejectAccessMatch = urlPath.match(/^\/api\/admin\/registrations\/([0-9a-f-]+)\/reject-access$/i);
+    if (req.method === 'POST' && rejectAccessMatch) {
+      const target = users.find((user) => user.id === rejectAccessMatch[1] && user.accessRequestStatus === 'pending' && user.approvalStatus === 'approved');
+      if (!target) return sendJson(res, 409, { error: 'This access request is no longer pending.' });
+      target.requestedEntitlements = [...(target.entitlements || [])]; target.accessRequestStatus = 'none'; saveUsers();
+      return sendJson(res, 200, { user: adminUser(target) });
     }
 
     const approvalEmailMatch = urlPath.match(/^\/api\/admin\/users\/([0-9a-f-]+)\/approval-email$/i);

@@ -10,7 +10,9 @@ A browser-based mathematics practice suite for New Zealand learners in Years 6-1
 public/                    Browser pages and static assets deployed by Cloudflare
   index.html               Sign-in and workbook navigation
   register.html            Public learner registration and privacy notice
+  parent-register.html     Public parent or guardian registration
   account.html             Signed-in user profile and password management
+  parent.html              Approved parent child-account portal
   admin.html               Administrator-only account management
   workbooks/               Shared curriculum page and arithmetic page
   assets/css/              Site, admin, and workbook styles
@@ -36,7 +38,11 @@ The workbooks include guided questions with immediate feedback, curriculum topic
 
 ## Learner registration and email setup
 
-The public registration form collects the learner profile, username, password, school year and requested workbooks. Applicants under 18 must enter a parent or guardian name and email. Registration creates an inactive pending account; the learner cannot sign in until an administrator approves it and grants workbook access. Administrators review requests in **Manage Users → Registrations awaiting approval**. Declining a request deletes its account and profile. Approved users can edit their profile, change their password, request a password reset by email, and sign out.
+The public learner registration form collects the learner profile, username, password, school year and requested workbooks. Applicants under 18 must enter a parent or guardian name and email. Registration creates an inactive pending account; the learner cannot sign in until an administrator approves it and grants workbook access. Administrators review requests in **Manage Users → Registrations awaiting approval**. Declining a request deletes its account and profile. Approved users can edit their profile, change their password, request a password reset by email, and sign out.
+
+Adults can apply for a parent or guardian account from **Register as a parent or guardian** on the sign-in page. An administrator must approve it before the parent portal becomes available. Parents can add and remove child profiles, reset child passwords, and enable or disable a child's sign-in. A parent can submit workbook access requests, but these are not grants: only an administrator can approve the workbook years a child can open. Admins can also create or remove administrators in **Manage Users**; the service prevents removal or deactivation of the last active administrator. Change the administrator recovery email in **My account → Update administrator email**, confirming with the current password.
+
+Registration addresses have a country selector and use the browser's built-in address autofill where available. Google Places suggestions are not connected. Google currently offers free monthly usage caps for some Places requests, but enabling the Places API still requires a billing-enabled Google Cloud project and API key. Avoid adding it if you do not want to attach billing details; the standard address field and browser autofill need no Google key.
 
 Transactional messages (registration receipt, approval and password reset) use Resend's email API. Resend's current Free plan includes 3,000 emails per month with a 100-per-day limit, but it requires a domain you own and verify; a `workers.dev` address is not an email sending domain. See [Resend pricing](https://resend.com/pricing) and [verified domain requirements](https://resend.com/docs/dashboard/domains/introduction).
 

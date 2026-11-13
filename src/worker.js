@@ -108,7 +108,8 @@ function parentChild(row) {
 function validProfile(body, requireSchoolYear = true) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return 'Profile details are invalid.';
   const age = ageOnDate(body.dateOfBirth);
-  if (['firstName', 'surname', 'address', 'schoolYear'].some((key) => typeof body[key] !== 'string' || !body[key].trim())) return 'Complete all required profile fields.';
+  const requiredFields = requireSchoolYear ? ['firstName', 'surname', 'address', 'schoolYear'] : ['firstName', 'surname', 'address'];
+  if (requiredFields.some((key) => typeof body[key] !== 'string' || !body[key].trim())) return 'Complete all required profile fields.';
   if (body.firstName.trim().length > 80 || body.surname.trim().length > 80 || body.address.trim().length > 500) return 'Some profile fields are too long.';
   if (!validEmail(body.email)) return 'Enter a valid email address.';
   if (requireSchoolYear && !SCHOOL_YEARS.includes(body.schoolYear)) return 'Choose a valid school year.';
@@ -578,7 +579,7 @@ async function handleApi(request, env, url) {
   if (!auth || auth.user.role !== 'admin') return json({ error: 'Administrator access required.' }, 403);
 
   if (pathname === '/api/admin/users' && request.method === 'GET') {
-    const result = await env.DB.prepare('SELECT * FROM users ORDER BY CASE approval_status WHEN \'pending\' THEN 0 ELSE 1 END, username_key').all();
+    const result = await env.DB.prepare("SELECT * FROM users ORDER BY CASE WHEN approval_status='pending' OR access_request_status='pending' THEN 0 ELSE 1 END, username_key").all();
     return json({ users: (result.results || []).map(adminUser) });
   }
 
@@ -587,12 +588,13 @@ async function handleApi(request, env, url) {
     let body;
     try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
     if (!body || typeof body !== 'object' || !allowedEntitlementList(body.entitlements)) return json({ error: 'Select valid workbook access.' }, 400);
-    const pending = await env.DB.prepare("SELECT account_type, parent_enabled, admin_enabled FROM users WHERE id=? AND approval_status='pending' AND role='student'").bind(approvalMatch[1]).first();
-    if (!pending) return json({ error: 'This registration is no longer pending.' }, 409);
-    if (pending.account_type !== 'parent' && !body.entitlements.length) return json({ error: 'Select at least one workbook to grant.' }, 400);
-    const active = Boolean(pending.parent_enabled && pending.admin_enabled);
-    const update = await env.DB.prepare("UPDATE users SET active=?, approval_status='approved', entitlements=? WHERE id=? AND approval_status='pending' AND role='student'")
-      .bind(active ? 1 : 0, JSON.stringify([...new Set(body.entitlements)]), approvalMatch[1]).run();
+    const pending = await env.DB.prepare("SELECT account_type, parent_enabled, admin_enabled, active, approval_status, access_request_status FROM users WHERE id=? AND role='student'").bind(approvalMatch[1]).first();
+    if (!pending || (pending.approval_status !== 'pending' && pending.access_request_status !== 'pending')) return json({ error: 'This registration or access request is no longer pending.' }, 409);
+    const isNewApproval = pending.approval_status === 'pending';
+    if (pending.account_type !== 'parent' && isNewApproval && !body.entitlements.length) return json({ error: 'Select at least one workbook to grant.' }, 400);
+    const active = isNewApproval ? Boolean(pending.parent_enabled && pending.admin_enabled) : Boolean(pending.active);
+    const update = await env.DB.prepare("UPDATE users SET active=?, approval_status='approved', entitlements=?, requested_entitlements=?, access_request_status='none' WHERE id=? AND role='student' AND (approval_status='pending' OR access_request_status='pending')")
+      .bind(active ? 1 : 0, JSON.stringify([...new Set(body.entitlements)]), JSON.stringify([...new Set(body.entitlements)]), approvalMatch[1]).run();
     if (!update.meta.changes) return json({ error: 'This registration is no longer pending.' }, 409);
     const row = await env.DB.prepare('SELECT * FROM users WHERE id=?').bind(approvalMatch[1]).first();
     const profile = { ...row, firstName: row.first_name, parentEmail: row.parent_email };
@@ -605,6 +607,14 @@ async function handleApi(request, env, url) {
   if (rejectMatch && request.method === 'DELETE') {
     const result = await env.DB.prepare("DELETE FROM users WHERE id=? AND approval_status='pending' AND role='student'").bind(rejectMatch[1]).run();
     return result.meta.changes ? json({ ok: true }) : json({ error: 'This registration is no longer pending.' }, 409);
+  }
+
+  const rejectAccessMatch = pathname.match(/^\/api\/admin\/registrations\/([0-9a-f-]+)\/reject-access$/i);
+  if (rejectAccessMatch && request.method === 'POST') {
+    const target = await env.DB.prepare("SELECT entitlements FROM users WHERE id=? AND role='student' AND approval_status='approved' AND access_request_status='pending'").bind(rejectAccessMatch[1]).first();
+    if (!target) return json({ error: 'This access request is no longer pending.' }, 409);
+    const result = await env.DB.prepare("UPDATE users SET requested_entitlements=entitlements, access_request_status='none' WHERE id=? AND role='student' AND approval_status='approved' AND access_request_status='pending'").bind(rejectAccessMatch[1]).run();
+    return result.meta.changes ? json({ ok: true }) : json({ error: 'This access request is no longer pending.' }, 409);
   }
 
   const approvalEmailMatch = pathname.match(/^\/api\/admin\/users\/([0-9a-f-]+)\/approval-email$/i);

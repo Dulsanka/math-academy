@@ -36,7 +36,7 @@
     const button = form.querySelector('button[type="submit"]'); button.disabled = true; status.classList.remove('success'); status.textContent = 'Submitting your registration…';
     const body = {
       firstName: form.elements.firstName.value.trim(), surname: form.elements.surname.value.trim(), email: form.elements.email.value.trim(),
-      dateOfBirth: form.elements.dateOfBirth.value, address: form.elements.address.value.trim(), schoolYear: form.elements.schoolYear.value,
+      dateOfBirth: form.elements.dateOfBirth.value, address: [form.elements.address.value.trim(), form.elements.country.value].filter(Boolean).join(', '), schoolYear: form.elements.schoolYear.value,
       username: form.elements.username.value.trim(), password: form.elements.password.value, parentName: form.elements.parentName.value.trim(),
       parentEmail: form.elements.parentEmail.value.trim(), requestedEntitlements, privacyAcknowledged: form.elements.privacyAcknowledged.checked
     };

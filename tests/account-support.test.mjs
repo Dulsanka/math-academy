@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import WORKBOOKS from '../src/workbooks.mjs';
-import { ageOnDate, notificationEmail, validateRegistration } from '../src/account-support.mjs';
+import { ageOnDate, notificationEmail, validateParentRegistration, validateRegistration } from '../src/account-support.mjs';
 
 const application = {
   firstName: 'Aroha', surname: 'Learner', email: 'aroha@example.test', dateOfBirth: '2012-05-02', address: '1 Learning Road',
@@ -22,4 +22,11 @@ test('notification templates escape user data and provide expected destinations'
   assert.doesNotMatch(mail.html, /<script>/);
   assert.match(mail.html, /&lt;script&gt;/);
   assert.equal(notificationEmail('approved', { firstName: 'Aroha' }, 'https://example.test/').subject, 'Your Math Academy access has been approved');
+});
+
+test('parent registration accepts adults and rejects underage applicants', () => {
+  const parent = { firstName: 'Mere', surname: 'Parent', email: 'mere@example.test', dateOfBirth: '1985-05-02', address: '1 Family Road, New Zealand', username: 'mere_parent', password: 'Mere-long-parent-passphrase-2026' };
+  assert.equal(validateParentRegistration(parent), null);
+  assert.match(validateParentRegistration({ ...parent, dateOfBirth: '2012-05-02' }), /adult aged 18/i);
+  assert.match(validateParentRegistration({ ...parent, email: 'not-an-email' }), /valid email/i);
 });

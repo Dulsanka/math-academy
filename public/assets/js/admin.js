@@ -47,47 +47,60 @@
   }
 
   function renderPending(users) {
-    const pending = users.filter(function (user) { return user.approvalStatus === 'pending'; });
+    const pending = users.filter(function (user) { return user.approvalStatus === 'pending' || user.accessRequestStatus === 'pending'; });
     document.getElementById('pending-count').textContent = String(pending.length);
     pendingList.replaceChildren();
     pending.forEach(function (user) {
+      const isNewApproval = user.approvalStatus === 'pending';
+      const isAccessReview = !isNewApproval && user.accessRequestStatus === 'pending';
+      const isParent = user.accountType === 'parent';
       const card = document.createElement('article'); card.className = 'user-card pending-card';
-      const heading = document.createElement('h3'); heading.textContent = (user.firstName + ' ' + user.surname).trim() + ' — ' + user.username;
+      const heading = document.createElement('h3'); heading.textContent = (user.firstName + ' ' + user.surname).trim() + ' - ' + user.username;
       card.appendChild(heading);
       addProfileDetail(card, 'Email', user.email); addProfileDetail(card, 'Date of birth', user.dateOfBirth);
       addProfileDetail(card, 'Address', user.address); addProfileDetail(card, 'School year', user.schoolYear);
       addProfileDetail(card, 'Parent or guardian', user.parentName ? user.parentName + ' (' + user.parentEmail + ')' : 'Not required');
-      const isParent = user.accountType === 'parent';
       const requested = document.createElement('p'); requested.className = 'profile-detail';
-      requested.textContent = isParent ? 'Parent account request. This account has no workbook access unless an administrator grants it separately.' : 'Requested: ' + user.requestedEntitlements.map(function (key) { const match = WORKBOOKS.find(function (entry) { return entry[0] === key; }); return match ? match[1] : key; }).join(', '); card.appendChild(requested);
-      const access = document.createElement('div'); access.className = 'entitlement-grid'; makeEntitlementInputs(access, user.requestedEntitlements, 'grant-' + user.id); if (!isParent) card.appendChild(access);
+      const requestedNames = user.requestedEntitlements.map(function (key) { const match = WORKBOOKS.find(function (entry) { return entry[0] === key; }); return match ? match[1] : key; }).join(', ');
+      if (isParent && isNewApproval) requested.textContent = 'Parent account request. This account has no workbook access unless an administrator grants it separately.';
+      else requested.textContent = (isAccessReview ? 'Requested workbook access changes. Current access remains active until you approve the selection: ' : 'Requested: ') + requestedNames;
+      card.appendChild(requested);
+      const access = document.createElement('div'); access.className = 'entitlement-grid'; makeEntitlementInputs(access, user.requestedEntitlements, 'grant-' + user.id);
+      if (!isParent || isAccessReview) card.appendChild(access);
       const actions = document.createElement('div'); actions.className = 'user-actions';
-      const approve = document.createElement('button'); approve.type = 'button'; approve.textContent = isParent ? 'Approve parent account' : 'Approve selected workbook access';
+      const approve = document.createElement('button'); approve.type = 'button'; approve.textContent = isParent && isNewApproval ? 'Approve parent account' : 'Approve selected workbook access';
       approve.addEventListener('click', async function () {
-        const entitlements = isParent ? [] : checkedValues(access); if (!isParent && !entitlements.length) { setStatus('Choose at least one workbook to grant.', false); return; }
+        const entitlements = isParent && isNewApproval ? [] : checkedValues(access);
+        if (!isParent && isNewApproval && !entitlements.length) { setStatus('Choose at least one workbook to grant.', false); return; }
         approve.disabled = true;
-        try { await request('/api/admin/registrations/' + encodeURIComponent(user.id) + '/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entitlements: entitlements }) }); setStatus(isParent ? 'Approved parent account ' + user.username + ' and sent the email.' : 'Approved ' + user.username + ' and sent the access email.', true); await loadUsers(); }
-        catch (error) { setStatus(error.message, false); await loadUsers().catch(function () {}); }
+        try {
+          await request('/api/admin/registrations/' + encodeURIComponent(user.id) + '/approve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entitlements: entitlements }) });
+          setStatus(isParent && isNewApproval ? 'Approved parent account ' + user.username + ' and sent the email.' : 'Approved workbook access for ' + user.username + '.', true); await loadUsers();
+        } catch (error) { setStatus(error.message, false); await loadUsers().catch(function () {}); }
         finally { approve.disabled = false; }
       });
-      const decline = document.createElement('button'); decline.type = 'button'; decline.className = 'danger'; decline.textContent = 'Decline and delete';
+      const decline = document.createElement('button'); decline.type = 'button'; decline.className = 'danger'; decline.textContent = isAccessReview ? 'Decline access request' : 'Decline and delete';
       decline.addEventListener('click', async function () {
-        if (!window.confirm('Decline this application and permanently delete its profile?')) return;
+        const prompt = isAccessReview ? 'Decline this workbook access request? The current access will remain unchanged.' : 'Decline this application and permanently delete its profile?';
+        if (!window.confirm(prompt)) return;
         decline.disabled = true;
-        try { await request('/api/admin/registrations/' + encodeURIComponent(user.id), { method: 'DELETE' }); setStatus('Declined application and deleted its profile.', true); await loadUsers(); }
-        catch (error) { setStatus(error.message, false); }
+        try {
+          if (isAccessReview) await request('/api/admin/registrations/' + encodeURIComponent(user.id) + '/reject-access', { method: 'POST' });
+          else await request('/api/admin/registrations/' + encodeURIComponent(user.id), { method: 'DELETE' });
+          setStatus(isAccessReview ? 'Declined the access request; existing access was kept.' : 'Declined application and deleted its profile.', true); await loadUsers();
+        } catch (error) { setStatus(error.message, false); }
         finally { decline.disabled = false; }
       });
       actions.append(approve, decline); card.appendChild(actions); pendingList.appendChild(card);
     });
-    if (!pending.length) pendingList.textContent = 'There are no registrations waiting for review.';
+    if (!pending.length) pendingList.textContent = 'There are no registrations or access requests waiting for review.';
   }
 
   async function loadUsers() {
     const result = await request('/api/admin/users');
     renderPending(result.users);
     usersList.replaceChildren();
-    result.users.filter(function (user) { return user.approvalStatus !== 'pending'; }).forEach(function (user) {
+    result.users.filter(function (user) { return user.approvalStatus !== 'pending' && user.accessRequestStatus !== 'pending'; }).forEach(function (user) {
       const card = document.createElement('article');
       card.className = 'user-card';
       const top = document.createElement('div');
@@ -173,7 +186,7 @@
       card.append(top, emailForm, access, actions, reset);
       usersList.appendChild(card);
     });
-    if (!result.users.some(function (user) { return user.approvalStatus !== 'pending'; })) usersList.textContent = 'No approved accounts have been created yet.';
+    if (!result.users.some(function (user) { return user.approvalStatus !== 'pending' && user.accessRequestStatus !== 'pending'; })) usersList.textContent = 'No approved accounts have been created yet.';
   }
 
   makeEntitlementInputs(document.querySelector('[data-entitlements]'), [], 'new-entitlement');
