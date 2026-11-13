@@ -2,8 +2,37 @@
       const authGate = document.getElementById('auth-gate');
       const loginForm = document.getElementById('login-form');
       const loginStatus = document.getElementById('login-status');
+      const designPreview = document.getElementById('nz-design-preview');
+      const designOption = document.getElementById('nz-design-option');
+      const designDescription = document.getElementById('nz-design-description');
+      const welcomeHero = document.querySelector('.welcome-hero');
       const allowedWorkbooks = new Set();
       let signedIn = false;
+
+      const designDescriptions = {
+        fern: 'A soft silver fern watermark over the current blue theme.',
+        stars: 'The Southern Cross in fine, quiet blue linework.',
+        contours: 'Aotearoa-inspired topographic contour lines.',
+        pohutukawa: 'A restrained pōhutukawa flower and leaf watermark.'
+      };
+
+      function selectDesign(value) {
+        const design = Object.prototype.hasOwnProperty.call(designDescriptions, value) ? value : 'fern';
+        welcomeHero.dataset.nzDesign = design;
+        designOption.value = design;
+        designDescription.textContent = designDescriptions[design];
+        try { window.localStorage.setItem('math-academy-nz-design-preview', design); } catch (_) { /* Preview still works when storage is unavailable. */ }
+      }
+
+      if (new URLSearchParams(window.location.search).get('designPreview') === '1') {
+        designPreview.hidden = false;
+        let savedDesign = 'fern';
+        try { savedDesign = window.localStorage.getItem('math-academy-nz-design-preview') || savedDesign; } catch (_) { /* Use the default preview. */ }
+        selectDesign(savedDesign);
+        designOption.addEventListener('change', function () { selectDesign(designOption.value); });
+      } else {
+        welcomeHero.dataset.nzDesign = 'none';
+      }
 
       function entitlementFor(wbKey) {
         if (wbKey === 'wb_arith') return 'arithmetic';

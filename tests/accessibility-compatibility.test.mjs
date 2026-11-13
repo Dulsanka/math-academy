@@ -45,6 +45,18 @@ test('login has a labelled role selector without a public administrator option',
   assert.match(read('assets/js/site.js'), /actualType === 'admin'.*window\.location\.assign\('\/admin\.html'\)/s);
 });
 
+test('login watermark preview offers four local, persistent design choices', () => {
+  const html = read('index.html');
+  const choices = [...html.matchAll(/<option value="(fern|stars|contours|pohutukawa)">/g)].map(match => match[1]);
+  assert.deepEqual(choices, ['fern', 'stars', 'contours', 'pohutukawa']);
+  const script = read('assets/js/site.js');
+  assert.match(script, /get\('designPreview'\) === '1'/, 'design controls are limited to the preview URL');
+  assert.match(script, /math-academy-nz-design-preview/);
+  for (const asset of ['silver-fern.svg', 'southern-cross.svg', 'aotearoa-contours.svg', 'pohutukawa.svg']) {
+    assert.ok(fs.existsSync(path.join(publicRoot, 'assets', 'images', 'nz-watermarks', asset)), `${asset} watermark exists`);
+  }
+});
+
 test('form controls on access and account pages have associated labels', () => {
   const pages = ['index.html', 'register.html', 'parent-register.html', 'account.html', 'admin.html', 'parent.html'];
   for (const page of pages) {
