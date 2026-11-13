@@ -126,9 +126,10 @@
       form.reset(); childCount.value = '1'; renderChildren();
       status.textContent = result.emailSent === false
         ? (result.message || 'Your family registration was saved, but the receipt email could not be sent. An administrator can resend it; children can sign in, but workbooks remain locked until approved.')
-        : 'Family registration submitted. Check your email. Your parent account awaits administrator approval; children can sign in now, but workbook access awaits administrator approval.';
+        : 'Family registration submitted. Check your email. Your parent account awaits administrator approval; children can sign in now, but workbook access awaits administrator approval. Returning to sign in shortly...';
       status.classList.toggle('success', result.emailSent !== false);
       status.classList.toggle('warning', result.emailSent === false);
+      if (result.emailSent !== false) window.setTimeout(function () { window.location.replace('/'); }, 4000);
     } catch (error) { status.textContent = error.message; }
     finally { button.disabled = false; }
   });
