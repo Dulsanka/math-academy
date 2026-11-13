@@ -105,16 +105,18 @@ function parentChild(row) {
   };
 }
 
-function validProfile(body, requireSchoolYear = true) {
+function validProfile(body, requireSchoolYear = true, isAdmin = false) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) return 'Profile details are invalid.';
   const age = ageOnDate(body.dateOfBirth);
-  const requiredFields = requireSchoolYear ? ['firstName', 'surname', 'address', 'schoolYear'] : ['firstName', 'surname', 'address'];
+  const requiredFields = ['firstName', 'surname'];
+  if (!isAdmin) requiredFields.push('address');
+  if (requireSchoolYear) requiredFields.push('schoolYear');
   if (requiredFields.some((key) => typeof body[key] !== 'string' || !body[key].trim())) return 'Complete all required profile fields.';
-  if (body.firstName.trim().length > 80 || body.surname.trim().length > 80 || body.address.trim().length > 500) return 'Some profile fields are too long.';
-  if (!validEmail(body.email)) return 'Enter a valid email address.';
+  if (body.firstName.trim().length > 80 || body.surname.trim().length > 80 || String(body.address || '').trim().length > 500) return 'Some profile fields are too long.';
+  if (body.email && !validEmail(body.email)) return 'Enter a valid email address.';
   if (requireSchoolYear && !SCHOOL_YEARS.includes(body.schoolYear)) return 'Choose a valid school year.';
-  if (age === null) return 'Enter a valid date of birth that is not in the future.';
-  if (age < 18 && (!body.parentName?.trim() || body.parentName.trim().length > 160 || !validEmail(body.parentEmail))) return 'A parent or guardian name and email are required for applicants under 18.';
+  if (!isAdmin && age === null) return 'Enter a valid date of birth that is not in the future.';
+  if (!isAdmin && age < 18 && (!body.parentName?.trim() || body.parentName.trim().length > 160 || !validEmail(body.parentEmail))) return 'A parent or guardian name and email are required for applicants under 18.';
   return null;
 }
 
@@ -384,17 +386,25 @@ async function handleApi(request, env, url) {
     if (!accountAuth) return json({ error: 'Sign in is required.' }, 401);
     let body;
     try { body = await readJson(request); } catch (error) { return json({ error: error.message }, 400); }
-    const invalid = validProfile(body, accountAuth.user.accountType !== 'parent');
+    const isAdmin = accountAuth.user.role === 'admin';
+    const isParent = accountAuth.user.accountType === 'parent';
+    const invalid = validProfile(body, !isParent && !isAdmin, isAdmin);
     if (invalid) return json({ error: invalid }, 400);
-    const email = body.email.trim().toLowerCase();
-    if (email !== accountAuth.email.toLowerCase() || (body.parentEmail?.trim().toLowerCase() || '') !== accountAuth.parentEmail.toLowerCase()) {
+    const email = (body.email || accountAuth.email).trim().toLowerCase();
+    if (email !== accountAuth.email.toLowerCase() || (!isAdmin && (body.parentEmail?.trim().toLowerCase() || '') !== accountAuth.parentEmail.toLowerCase())) {
       return json({ error: 'Email addresses cannot be changed from this page. Contact an administrator to update them.' }, 400);
     }
-    const duplicate = await env.DB.prepare('SELECT id FROM users WHERE lower(email) = ? AND id != ? LIMIT 1').bind(email, accountAuth.user.id).first();
-    if (duplicate) return json({ error: 'That email address is already used by another account.' }, 409);
-    await env.DB.prepare('UPDATE users SET first_name=?, surname=?, email=?, date_of_birth=?, address=?, school_year=?, parent_name=?, parent_email=? WHERE id=?')
-      .bind(body.firstName.trim(), body.surname.trim(), email, body.dateOfBirth, body.address.trim(), body.schoolYear,
-        body.parentName?.trim() || '', body.parentEmail?.trim().toLowerCase() || '', accountAuth.user.id).run();
+    if (email) {
+      const duplicate = await env.DB.prepare('SELECT id FROM users WHERE lower(email) = ? AND id != ? LIMIT 1').bind(email, accountAuth.user.id).first();
+      if (duplicate) return json({ error: 'That email address is already used by another account.' }, 409);
+    }
+    if (isAdmin) {
+      await env.DB.prepare('UPDATE users SET first_name=?, surname=? WHERE id=?').bind(body.firstName.trim(), body.surname.trim(), accountAuth.user.id).run();
+    } else {
+      await env.DB.prepare('UPDATE users SET first_name=?, surname=?, email=?, date_of_birth=?, address=?, school_year=?, parent_name=?, parent_email=? WHERE id=?')
+        .bind(body.firstName.trim(), body.surname.trim(), email, body.dateOfBirth, body.address.trim(), body.schoolYear,
+          body.parentName?.trim() || '', body.parentEmail?.trim().toLowerCase() || '', accountAuth.user.id).run();
+    }
     const row = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(accountAuth.user.id).first();
     return json({ profile: accountProfile(row) });
   }

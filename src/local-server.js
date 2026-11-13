@@ -317,16 +317,19 @@ async function handleApi(req, res, urlPath) {
     let body;
     try { body = await readJson(req); } catch (error) { return sendJson(res, 400, { error: error.message }); }
     if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res, 400, { error: 'Profile details are invalid.' });
+    const isAdmin = accountAuth.user.role === 'admin';
+    const isParent = accountAuth.user.accountType === 'parent';
     const age = accountSupport.ageOnDate(body.dateOfBirth);
-    if (['firstName','surname','address'].some((key) => typeof body[key] !== 'string' || !body[key].trim()) || body.firstName.length > 80 || body.surname.length > 80 || body.address.length > 500) return sendJson(res, 400, { error: 'Complete all required profile fields.' });
-    if (!accountSupport.validEmail(body.email)) return sendJson(res, 400, { error: 'Enter a valid email address.' });
-    if (accountAuth.user.accountType !== 'parent' && !accountSupport.SCHOOL_YEARS.includes(body.schoolYear)) return sendJson(res, 400, { error: 'Choose a valid school year.' });
-    if (age === null) return sendJson(res, 400, { error: 'Enter a valid date of birth that is not in the future.' });
-    if (age < 18 && (!body.parentName?.trim() || body.parentName.trim().length > 160 || !accountSupport.validEmail(body.parentEmail))) return sendJson(res, 400, { error: 'A parent or guardian name and email are required for applicants under 18.' });
-    const email = body.email.trim().toLowerCase();
-    if (email !== (accountAuth.user.email || '').toLowerCase() || (body.parentEmail?.trim().toLowerCase() || '') !== (accountAuth.user.parentEmail || '').toLowerCase()) return sendJson(res, 400, { error: 'Email addresses cannot be changed from this page. Contact an administrator to update them.' });
-    if (users.some((item) => item.id !== accountAuth.user.id && (item.email || '').toLowerCase() === email)) return sendJson(res, 409, { error: 'That email address is already used by another account.' });
-    Object.assign(accountAuth.user, { firstName: body.firstName.trim(), surname: body.surname.trim(), email, dateOfBirth: body.dateOfBirth, address: body.address.trim(), schoolYear: body.schoolYear || '', parentName: body.parentName?.trim() || '', parentEmail: body.parentEmail?.trim().toLowerCase() || '' });
+    if (['firstName','surname'].some((key) => typeof body[key] !== 'string' || !body[key].trim()) || body.firstName.length > 80 || body.surname.length > 80 || (!isAdmin && (typeof body.address !== 'string' || !body.address.trim() || body.address.length > 500))) return sendJson(res, 400, { error: 'Complete all required profile fields.' });
+    if (body.email && !accountSupport.validEmail(body.email)) return sendJson(res, 400, { error: 'Enter a valid email address.' });
+    if (!isParent && !isAdmin && !accountSupport.SCHOOL_YEARS.includes(body.schoolYear)) return sendJson(res, 400, { error: 'Choose a valid school year.' });
+    if (!isAdmin && age === null) return sendJson(res, 400, { error: 'Enter a valid date of birth that is not in the future.' });
+    if (!isAdmin && age < 18 && (!body.parentName?.trim() || body.parentName.trim().length > 160 || !accountSupport.validEmail(body.parentEmail))) return sendJson(res, 400, { error: 'A parent or guardian name and email are required for applicants under 18.' });
+    const email = (body.email || accountAuth.user.email || '').trim().toLowerCase();
+    if (email !== (accountAuth.user.email || '').toLowerCase() || (!isAdmin && (body.parentEmail?.trim().toLowerCase() || '') !== (accountAuth.user.parentEmail || '').toLowerCase())) return sendJson(res, 400, { error: 'Email addresses cannot be changed from this page. Contact an administrator to update them.' });
+    if (email && users.some((item) => item.id !== accountAuth.user.id && (item.email || '').toLowerCase() === email)) return sendJson(res, 409, { error: 'That email address is already used by another account.' });
+    if (isAdmin) Object.assign(accountAuth.user, { firstName: body.firstName.trim(), surname: body.surname.trim() });
+    else Object.assign(accountAuth.user, { firstName: body.firstName.trim(), surname: body.surname.trim(), email, dateOfBirth: body.dateOfBirth, address: body.address.trim(), schoolYear: body.schoolYear || '', parentName: body.parentName?.trim() || '', parentEmail: body.parentEmail?.trim().toLowerCase() || '' });
     saveUsers(); return sendJson(res, 200, { profile: accountProfile(accountAuth.user) });
   }
   if (req.method === 'POST' && urlPath === '/api/account/email') {

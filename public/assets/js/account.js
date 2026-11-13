@@ -1,6 +1,7 @@
 (function () {
   const profileForm = document.getElementById('profile-form');
   const guardianBox = document.getElementById('account-guardian');
+  let isAdminProfile = false;
   async function request(url, options) {
     const response = await fetch(url, Object.assign({ credentials: 'same-origin' }, options || {}));
     const result = await response.json().catch(function () { return {}; });
@@ -9,11 +10,18 @@
   }
   function setFormValues(form, data) { Object.keys(data).forEach(function (key) { if (form.elements[key]) form.elements[key].value = data[key] || ''; }); }
   function ageFor(value) { if (!value) return null; const born = new Date(value + 'T00:00:00Z'); const now = new Date(); let age = now.getUTCFullYear() - born.getUTCFullYear(); if (now.getUTCMonth() < born.getUTCMonth() || (now.getUTCMonth() === born.getUTCMonth() && now.getUTCDate() < born.getUTCDate())) age -= 1; return age; }
-  function updateGuardian() { const age = ageFor(profileForm.elements.dateOfBirth.value); const required = age !== null && age < 18; guardianBox.classList.toggle('hidden', !required); profileForm.elements.parentName.required = required; profileForm.elements.parentEmail.required = required; }
+  function updateGuardian() { const age = ageFor(profileForm.elements.dateOfBirth.value); const required = !isAdminProfile && age !== null && age < 18; guardianBox.classList.toggle('hidden', !required); profileForm.elements.parentName.required = required; profileForm.elements.parentEmail.required = required; }
   request('/api/account').then(function (result) {
     setFormValues(profileForm, result.profile); updateGuardian();
-    if (result.profile.accountType === 'parent') { document.getElementById('school-year-field').classList.add('hidden'); profileForm.elements.schoolYear.required = false; }
-    if (result.profile.role === 'admin') document.getElementById('admin-email-panel').classList.remove('hidden');
+    if (result.profile.accountType === 'parent' || result.profile.role === 'admin') { document.getElementById('school-year-field').classList.add('hidden'); profileForm.elements.schoolYear.required = false; }
+    if (result.profile.role === 'admin') {
+      isAdminProfile = true;
+      ['date-of-birth-field', 'address-field', 'account-guardian'].forEach(function (id) { document.getElementById(id).classList.add('hidden'); });
+      profileForm.elements.dateOfBirth.required = false; profileForm.elements.address.required = false;
+      profileForm.elements.parentName.required = false; profileForm.elements.parentEmail.required = false;
+      document.getElementById('admin-email-panel').classList.remove('hidden');
+      updateGuardian();
+    }
   }).catch(function () { window.location.replace('/'); });
   profileForm.elements.dateOfBirth.addEventListener('change', updateGuardian);
   profileForm.addEventListener('submit', async function (event) {

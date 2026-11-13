@@ -131,6 +131,11 @@ test('end-to-end access, entitlements, administrator actions, and session lifecy
   const emailChange = await request('/api/account/email', { method: 'POST', cookie: adminLogin.cookie, body: { email: 'new-admin@example.test', currentPassword: ADMIN_PASSWORD } });
   assert.equal(emailChange.status, 200, 'administrator email change succeeds after password confirmation');
   assert.equal((await emailChange.json()).email, 'new-admin@example.test');
+  const adminProfileUpdate = await request('/api/account', { method: 'PATCH', cookie: adminLogin.cookie, body: {
+    firstName: 'Academy', surname: 'Administrator', email: 'new-admin@example.test', dateOfBirth: '', address: '', schoolYear: '', parentName: '', parentEmail: ''
+  } });
+  assert.equal(adminProfileUpdate.status, 200, 'admin profile saves without learner-only date, address, school year or guardian details');
+  assert.equal((await adminProfileUpdate.json()).profile.firstName, 'Academy');
   assert.equal((await signIn(PENDING_PARENT_NAME, PENDING_PARENT_PASSWORD)).response.status, 401);
   const parentApproval = await request('/api/admin/registrations/' + pendingParentId + '/approve', { method: 'POST', cookie: adminLogin.cookie, body: { entitlements: [] } });
   assert.equal(parentApproval.status, 502, 'parent approval is saved but email configuration is required to report completion');
