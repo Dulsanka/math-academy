@@ -15,8 +15,7 @@ const samplePassword = 'MathDemo2026!';
 const timestamp = new Date().toISOString();
 const parents = [
   { username: 'sample_parent_1', firstName: 'Alex', surname: 'Morgan', email: 'alex.morgan@example.test' },
-  { username: 'sample_parent_2', firstName: 'Jamie', surname: 'Taylor', email: 'jamie.taylor@example.test' },
-  { username: 'sample_parent_3', firstName: 'Riley', surname: 'Patel', email: 'riley.patel@example.test' }
+  { username: 'sample_parent_2', firstName: 'Jamie', surname: 'Taylor', email: 'jamie.taylor@example.test' }
 ];
 
 for (const profile of parents) {

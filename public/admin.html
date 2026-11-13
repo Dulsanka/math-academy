@@ -26,6 +26,20 @@
         <button type="submit">Create administrator</button>
       </form>
     </section>
+    <section class="panel parent-creation-panel">
+      <h2>Create an approved parent account</h2>
+      <p>Use this for parent accounts created directly by an administrator, such as when linking existing child profiles. Parent accounts created here can sign in immediately.</p>
+      <form id="create-parent-form" class="create-form" method="post">
+        <label>First name<input name="firstName" required maxlength="80" /></label>
+        <label>Surname<input name="surname" required maxlength="80" /></label>
+        <label>Email<input name="email" type="email" required maxlength="254" autocomplete="email" /></label>
+        <label>Date of birth<input name="dateOfBirth" type="date" required /></label>
+        <label>Address<input name="address" required maxlength="500" /></label>
+        <label>Username<input name="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9._-]{3,32}" autocomplete="off" /></label>
+        <label>Temporary password<input name="password" type="password" required minlength="12" maxlength="256" autocomplete="new-password" /></label>
+        <button type="submit">Create parent account</button>
+      </form>
+    </section>
     <section class="panel">
       <div class="section-head"><div><h2>Child learning progress</h2><p>Administrator view across all child accounts and linked families.</p></div><button id="refresh-progress" class="secondary" type="button">Refresh progress</button></div>
       <div class="admin-progress-filters"><label>Family or child<input id="admin-progress-search" type="search" placeholder="Search name, username, parent"></label><label>Workbook<select id="admin-progress-workbook"><option value="all">All workbooks</option></select></label></div>

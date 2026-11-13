@@ -240,6 +240,14 @@
     finally { button.disabled = false; }
   });
 
+  document.getElementById('create-parent-form').addEventListener('submit', async function (event) {
+    event.preventDefault(); const form=event.currentTarget; const button=form.querySelector('button[type="submit"]'); button.disabled=true;
+    try {
+      const result=await request('/api/admin/users',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:'parent',username:form.elements.username.value.trim(),password:form.elements.password.value,firstName:form.elements.firstName.value.trim(),surname:form.elements.surname.value.trim(),email:form.elements.email.value.trim(),dateOfBirth:form.elements.dateOfBirth.value,address:form.elements.address.value.trim()})});
+      form.reset();setStatus('Created approved parent account '+result.user.username+'. Link their children from the account list.',true);await loadUsers();
+    } catch(error){setStatus(error.message,false);} finally{button.disabled=false;}
+  });
+
   document.getElementById('refresh-users').addEventListener('click', function () {
     loadUsers().then(function () { setStatus('', true); }).catch(function (error) { setStatus(error.message, false); });
   });

@@ -552,14 +552,21 @@ async function handleApi(req, res, urlPath) {
       if (!body || typeof body !== 'object' || Array.isArray(body)) return sendJson(res, 400, { error: 'Request body must be an object.' });
       const username = String(body.username || '').trim();
       const role = body.role;
-      if (role !== 'admin') return sendJson(res, 400, { error: 'Only administrators can be created here. Parents create child accounts from their portal.' });
+      if (!['admin', 'parent'].includes(role)) return sendJson(res, 400, { error: 'Choose administrator or parent account. Child accounts must be created by a parent.' });
       if (!validUsername(username)) return sendJson(res, 400, { error: 'Username must be 3–32 characters using letters, numbers, dots, underscores or hyphens.' });
       if (!validPassword(body.password)) return sendJson(res, 400, { error: 'Password must be at least 12 characters.' });
+      if (role === 'parent') {
+        if (typeof body.firstName !== 'string' || !body.firstName.trim() || body.firstName.trim().length > 80 || typeof body.surname !== 'string' || !body.surname.trim() || body.surname.trim().length > 80 ||
+            typeof body.address !== 'string' || !body.address.trim() || body.address.trim().length > 500 || !accountSupport.validEmail(body.email)) return sendJson(res, 400, { error: 'Enter valid parent name, email, and address details.' });
+        const age = accountSupport.ageOnDate(body.dateOfBirth);
+        if (age === null || age < 18) return sendJson(res, 400, { error: 'Parent accounts must belong to an adult aged 18 or over.' });
+      }
       if (users.some((item) => item.username.toLowerCase() === username.toLowerCase())) return sendJson(res, 409, { error: 'That username already exists.' });
+      if (role === 'parent' && users.some((item) => (item.email || '').toLowerCase() === body.email.trim().toLowerCase())) return sendJson(res, 409, { error: 'That email address is already used by another account.' });
       if (!isAllowedEntitlementList(body.entitlements || [])) return sendJson(res, 400, { error: 'One or more workbook entitlements are invalid.' });
       const passwordFields = await makePassword(body.password);
       if (users.some((item) => item.username.toLowerCase() === username.toLowerCase())) return sendJson(res, 409, { error: 'That username already exists.' });
-      const created = { id: crypto.randomUUID(), username, role, accountType: role === 'admin' ? 'admin' : 'learner', active: true, adminEnabled: true, parentEnabled: true, approvalStatus: 'approved', entitlements: role === 'admin' ? Object.keys(WORKBOOKS) : [...new Set(body.entitlements || [])], requestedEntitlements: [], ...passwordFields, createdAt: new Date().toISOString() };
+      const created = { id: crypto.randomUUID(), username, role: role === 'admin' ? 'admin' : 'student', accountType: role, active: true, adminEnabled: true, parentEnabled: true, approvalStatus: 'approved', entitlements: role === 'admin' ? Object.keys(WORKBOOKS) : [], requestedEntitlements: [], firstName: role === 'parent' ? body.firstName.trim() : '', surname: role === 'parent' ? body.surname.trim() : '', email: role === 'parent' ? body.email.trim().toLowerCase() : '', dateOfBirth: role === 'parent' ? body.dateOfBirth : '', address: role === 'parent' ? body.address.trim() : '', schoolYear: '', parentId: null, ...passwordFields, createdAt: new Date().toISOString() };
       users.push(created); saveUsers();
       return sendJson(res, 201, { user: publicUser(created) });
     }

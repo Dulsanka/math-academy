@@ -688,24 +688,33 @@ async function handleApi(request, env, url) {
     if (!body || typeof body !== 'object' || Array.isArray(body)) return json({ error: 'Request body must be an object.' }, 400);
     const username = String(body.username || '').trim();
     const role = body.role;
-    if (role !== 'admin') return json({ error: 'Only administrators can be created here. Parents create child accounts from their portal.' }, 400);
+    if (!['admin', 'parent'].includes(role)) return json({ error: 'Choose administrator or parent account. Child accounts must be created by a parent.' }, 400);
     const entitlements = body.entitlements || [];
     if (!validUsername(username)) return json({ error: 'Username must be 3-32 characters using letters, numbers, dots, underscores or hyphens.' }, 400);
     if (!validPassword(body.password)) return json({ error: 'Password must be at least 12 characters.' }, 400);
-    if (role !== 'admin' && !allowedEntitlementList(entitlements)) return json({ error: 'One or more workbook entitlements are invalid.' }, 400);
+    if (role === 'parent') {
+      if (typeof body.firstName !== 'string' || !body.firstName.trim() || body.firstName.trim().length > 80 || typeof body.surname !== 'string' || !body.surname.trim() || body.surname.trim().length > 80 ||
+          typeof body.address !== 'string' || !body.address.trim() || body.address.trim().length > 500 || !validEmail(body.email)) return json({ error: 'Enter valid parent name, email, and address details.' }, 400);
+      const age = ageOnDate(body.dateOfBirth);
+      if (age === null || age < 18) return json({ error: 'Parent accounts must belong to an adult aged 18 or over.' }, 400);
+    }
+    if (role === 'parent' && (!Array.isArray(entitlements) || entitlements.length)) return json({ error: 'Parent accounts do not receive workbook access.' }, 400);
+    if (role === 'admin' && entitlements.length) return json({ error: 'Administrator access is managed by role.' }, 400);
     const salt = randomHex(16);
     const passwordHash = await derivePassword(body.password, salt);
     const id = crypto.randomUUID();
     try {
       await env.DB.prepare(
-        `INSERT INTO users (id, username, username_key, role, account_type, active, approval_status, entitlements, password_salt, password_hash, created_at)
-         VALUES (?, ?, lower(?), ?, ?, 1, 'approved', ?, ?, ?, ?)`
-      ).bind(id, username, username, role, role === 'admin' ? 'admin' : 'learner', JSON.stringify(role === 'admin' ? Object.keys(WORKBOOKS) : [...new Set(entitlements)]), salt, passwordHash, now).run();
+        `INSERT INTO users (id, username, username_key, role, account_type, active, parent_enabled, admin_enabled, approval_status, entitlements,
+          password_salt, password_hash, created_at, first_name, surname, email, email_key, date_of_birth, address)
+         VALUES (?, ?, lower(?), ?, ?, 1, 1, 1, 'approved', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).bind(id, username, username, role === 'admin' ? 'admin' : 'student', role, JSON.stringify(role === 'admin' ? Object.keys(WORKBOOKS) : []), salt, passwordHash, now,
+        role === 'parent' ? body.firstName.trim() : '', role === 'parent' ? body.surname.trim() : '', role === 'parent' ? body.email.trim().toLowerCase() : '', role === 'parent' ? body.email.trim().toLowerCase() : '', role === 'parent' ? body.dateOfBirth : '', role === 'parent' ? body.address.trim() : '').run();
     } catch (error) {
       if (String(error.message).toLowerCase().includes('unique')) return json({ error: 'That username or email address is already in use.' }, 409);
       throw error;
     }
-    const created = await env.DB.prepare('SELECT id, username, role, active, entitlements FROM users WHERE id = ?').bind(id).first();
+    const created = await env.DB.prepare('SELECT * FROM users WHERE id = ?').bind(id).first();
     return json({ user: publicUser(created) }, 201);
   }
 
