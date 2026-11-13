@@ -2,6 +2,9 @@ name = "math-academy"
 main = "src/worker.js"
 compatibility_date = "2026-11-11"
 
+[vars]
+GMAIL_SENDER_EMAIL = "dulsanka.development@gmail.com"
+
 [assets]
 directory = "./public"
 binding = "ASSETS"
