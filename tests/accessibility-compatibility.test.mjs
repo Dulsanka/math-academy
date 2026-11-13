@@ -53,9 +53,17 @@ test('login watermark preview offers four local, persistent design choices', () 
   assert.match(script, /get\('designPreview'\) === '1'/, 'design controls are limited to the preview URL');
   assert.match(script, /if \(designPreviewMode\) \{\s*showSignedOut\(\);/, 'preview remains visible even when a login session exists');
   assert.match(script, /math-academy-nz-design-preview/);
+  assert.match(script, /welcomeHero\.dataset\.nzDesign = 'fern'/, 'the sign-in page shows a design outside preview mode too');
   for (const asset of ['silver-fern.svg', 'southern-cross.svg', 'aotearoa-contours.svg', 'pohutukawa.svg']) {
     assert.ok(fs.existsSync(path.join(publicRoot, 'assets', 'images', 'nz-watermarks', asset)), `${asset} watermark exists`);
   }
+});
+
+test('shared Aotearoa watermark is included on every public page', () => {
+  const pages = ['index.html', 'register.html', 'parent-register.html', 'account.html', 'admin.html', 'parent.html', 'forgot-password.html', 'reset-password.html', 'workbooks/arithmetic.html', 'workbooks/curriculum.html'];
+  for (const page of pages) assert.match(read(page), /href="\/assets\/css\/nz-watermark\.css"/, `${page} loads the shared watermark stylesheet`);
+  const stylesheet = read('assets/css/nz-watermark.css');
+  for (const artwork of ['silver-fern.svg', 'southern-cross.svg']) assert.match(stylesheet, new RegExp(artwork));
 });
 
 test('form controls on access and account pages have associated labels', () => {

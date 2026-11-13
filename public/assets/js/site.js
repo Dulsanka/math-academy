@@ -20,6 +20,7 @@
       function selectDesign(value) {
         const design = Object.prototype.hasOwnProperty.call(designDescriptions, value) ? value : 'fern';
         welcomeHero.dataset.nzDesign = design;
+        document.body.dataset.nzDesign = design;
         designOption.value = design;
         designDescription.textContent = designDescriptions[design];
         try { window.localStorage.setItem('math-academy-nz-design-preview', design); } catch (_) { /* Preview still works when storage is unavailable. */ }
@@ -32,7 +33,7 @@
         selectDesign(savedDesign);
         designOption.addEventListener('change', function () { selectDesign(designOption.value); });
       } else {
-        welcomeHero.dataset.nzDesign = 'none';
+        welcomeHero.dataset.nzDesign = 'fern';
       }
 
       function entitlementFor(wbKey) {

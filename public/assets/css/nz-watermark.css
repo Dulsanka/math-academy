@@ -1,0 +1,33 @@
+/* Shared, decorative Aotearoa artwork. Kept behind page content and excluded from interaction. */
+body {
+  position: relative;
+  isolation: isolate;
+}
+
+body::before {
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  background-image:
+    url("/assets/images/nz-watermarks/silver-fern.svg"),
+    url("/assets/images/nz-watermarks/southern-cross.svg");
+  background-repeat: no-repeat;
+  background-position: right 2vw bottom 3vh, left 3vw top 10vh;
+  background-size: min(34vw, 420px) auto, min(20vw, 250px) auto;
+  opacity: .15;
+}
+
+@media (max-width: 700px) {
+  body::before {
+    background-position: right -5vw bottom 2vh, left -5vw top 9vh;
+    background-size: 42vw auto, 27vw auto;
+    opacity: .12;
+  }
+}
+
+@media print {
+  body::before { display: none !important; }
+}
+

@@ -638,11 +638,15 @@
 .nz-design-preview label{display:grid;grid-template-columns:auto minmax(150px,220px);align-items:center;gap:10px;color:#334e70;font-size:.8rem;font-weight:750}
 .nz-design-preview select{width:100%;padding:8px 10px;border:1px solid #c4d3e4;border-radius:8px;background:#fff;color:#17345a;font:inherit}
 .welcome-hero{position:relative;isolation:isolate;overflow:hidden}
-.welcome-hero::after{position:absolute;z-index:0;top:0;right:0;bottom:0;width:min(55%,620px);content:"";pointer-events:none;opacity:.16;background-repeat:no-repeat;background-position:right 8% center;background-size:contain;transition:opacity .2s ease}
+.welcome-hero::after{position:absolute;z-index:0;top:0;right:0;bottom:0;width:min(66%,720px);content:"";pointer-events:none;opacity:.32;background-repeat:no-repeat;background-position:right 8% center;background-size:contain;filter:drop-shadow(0 12px 22px rgb(5 26 58 / 12%));transition:opacity .2s ease}
 .welcome-hero>*{position:relative;z-index:1}
-.welcome-hero[data-nz-design="fern"]::after{background-image:url("/assets/images/nz-watermarks/silver-fern.svg")}
-.welcome-hero[data-nz-design="stars"]::after{background-image:url("/assets/images/nz-watermarks/southern-cross.svg");background-size:min(100%,560px) auto;background-position:75% 48%}
-.welcome-hero[data-nz-design="contours"]::after{background-image:url("/assets/images/nz-watermarks/aotearoa-contours.svg");background-size:min(100%,580px) auto;background-position:80% 50%;opacity:.12}
-.welcome-hero[data-nz-design="pohutukawa"]::after{background-image:url("/assets/images/nz-watermarks/pohutukawa.svg");background-size:min(100%,590px) auto;background-position:80% 50%;opacity:.14}
-@media(max-width:820px){.nz-design-preview{align-items:flex-start;flex-direction:column;gap:7px}.nz-design-preview label{grid-template-columns:auto minmax(150px,1fr);width:100%}.welcome-hero::after{right:-12%;width:72%;opacity:.1;background-position:right center}}
+.welcome-hero[data-nz-design="fern"]::after{background-image:url("/assets/images/nz-watermarks/silver-fern.svg");opacity:.38}
+.welcome-hero[data-nz-design="stars"]::after{background-image:url("/assets/images/nz-watermarks/southern-cross.svg");background-size:min(100%,620px) auto;background-position:75% 48%;opacity:.54}
+.welcome-hero[data-nz-design="contours"]::after{background-image:url("/assets/images/nz-watermarks/aotearoa-contours.svg");background-size:min(100%,650px) auto;background-position:80% 50%;opacity:.34}
+.welcome-hero[data-nz-design="pohutukawa"]::after{background-image:url("/assets/images/nz-watermarks/pohutukawa.svg");background-size:min(100%,650px) auto;background-position:80% 50%;opacity:.4}
+body[data-nz-design="fern"] .auth-gate{background:radial-gradient(ellipse at 88% 12%,#c6def9 0,transparent 42%),radial-gradient(circle at 12% 90%,#dcecff 0,transparent 34%),#eef5fd}
+body[data-nz-design="stars"] .auth-gate{background:radial-gradient(circle at 84% 18%,#bfdcff 0,transparent 34%),radial-gradient(circle at 15% 82%,#d8e8fb 0,transparent 38%),#eaf2fc}
+body[data-nz-design="contours"] .auth-gate{background:radial-gradient(ellipse at 84% 70%,#c6e5f7 0,transparent 42%),radial-gradient(ellipse at 14% 18%,#d7eaff 0,transparent 38%),#eff7fd}
+body[data-nz-design="pohutukawa"] .auth-gate{background:radial-gradient(circle at 82% 22%,#ccebf1 0,transparent 38%),radial-gradient(circle at 15% 82%,#d4e8fb 0,transparent 36%),#eef6fc}
+@media(max-width:820px){.nz-design-preview{align-items:flex-start;flex-direction:column;gap:7px}.nz-design-preview label{grid-template-columns:auto minmax(150px,1fr);width:100%}.welcome-hero::after{right:-12%;width:86%;opacity:.27;background-position:right center}.welcome-hero[data-nz-design="stars"]::after{opacity:.4}.welcome-hero[data-nz-design="contours"]::after{opacity:.3}.welcome-hero[data-nz-design="pohutukawa"]::after{opacity:.32}}
 @media(prefers-reduced-motion:reduce){.welcome-hero::after{transition:none}}
